@@ -65,6 +65,8 @@ export interface AppSettings {
   soundBeepEnabled: boolean;
   soundAlertEnabled: boolean;
   criticalExpiryDays: number;
+  warningExpiryDays?: number;
+  safeExpiryDays?: number;
   adminPassword: string;
 }
 

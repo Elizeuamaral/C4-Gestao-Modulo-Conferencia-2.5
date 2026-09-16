@@ -82,7 +82,7 @@ export default function MovementScreen({
   
   // Form fields
   const [productName, setProductName] = useState('');
-  const [quantity, setQuantity] = useState<number>(1);
+  const [quantity, setQuantity] = useState<number | ''>(1);
   const [unit, setUnit] = useState<'FD' | 'UN' | 'CX' | 'PCT'>('UN');
   const [lot, setLot] = useState('');
   const [manufacturingDate, setManufacturingDate] = useState('');
@@ -197,7 +197,7 @@ export default function MovementScreen({
       setQuantity(1);
       setShowEntryConfirmationModal(false);
       playErrorBuzzer();
-      setErrorMessage(`Código "${code}" não cadastrado. Digite o nome para cadastrar.`);
+      setErrorMessage(`Código de barras "${code}" não cadastrado na Base de Dados. Digite a descrição para cadastrar.`);
     }
 
     // Keep focus strictly on the barcode input for rapid scanner bips
@@ -352,7 +352,8 @@ export default function MovementScreen({
       return;
     }
 
-    if (quantity <= 0) {
+    const parsedQuantity = typeof quantity === 'number' ? quantity : parseInt(quantity as string, 10);
+    if (!parsedQuantity || isNaN(parsedQuantity) || parsedQuantity <= 0) {
       setErrorMessage('A quantidade deve ser maior que zero.');
       playErrorBuzzer();
       return;
@@ -392,7 +393,7 @@ export default function MovementScreen({
       productCode: code,
       productName: productName.trim(),
       type,
-      quantity,
+      quantity: parsedQuantity,
       unit,
       lot: lot.trim().toUpperCase(),
       manufacturingDate: manufacturingDate || undefined,
@@ -471,7 +472,7 @@ export default function MovementScreen({
     setCheckerName('');
     setIsConferenceStarted(false);
     setShowEntryConfirmationModal(false);
-    setSuccessMessage(`Sucesso! ${totalItems} item(ns) foram registrados no estoque.`);
+    setSuccessMessage(`Sucesso! ${totalItems} item(ns) conferido(s) e lançado(s) na Consulta de Estoque.`);
     playSuccessBeep();
 
     // Flash success message auto-hide
@@ -599,28 +600,6 @@ export default function MovementScreen({
                 {isConferenceStarted ? 'Conferência liberada' : 'Liberar conferência'}
               </button>
             </div>
-            {!isConferenceStarted && settings?.checkers && settings.checkers.length > 0 && (
-              <div className="mt-3 flex flex-wrap items-center gap-1.5 pt-2 border-t border-slate-200/60">
-                <span className="text-[11px] font-bold text-slate-500 mr-1">Conferentes cadastrados:</span>
-                {settings.checkers.map((c) => (
-                  <button
-                    key={c}
-                    type="button"
-                    onClick={() => setCheckerName(c)}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all ${
-                      checkerName === c
-                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                        : 'bg-white border-slate-200 text-slate-700 hover:border-indigo-300 hover:text-indigo-600'
-                    }`}
-                  >
-                    {c}
-                  </button>
-                ))}
-              </div>
-            )}
-            <p className="mt-2 text-xs text-slate-500">
-              O bip dos produtos só é liberado após informar o conferente. O campo fica bloqueado até concluir a conferência com fornecedor e nota.
-            </p>
           </div>
 
           {/* STEP 1: Search / Bip Barcode */}
@@ -708,7 +687,7 @@ export default function MovementScreen({
 
           {/* STEP 2: Product Name Confirmation */}
           <div className="grid grid-cols-1 md:grid-cols-12 gap-4 md:items-end">
-            <div className="space-y-2 md:col-span-8">
+            <div className="space-y-2 md:col-span-7">
               <label className="block text-sm font-semibold text-slate-700 flex items-center gap-1.5">
                 <Package className="h-4 w-4 text-indigo-500" />
                 Nome do Produto
@@ -730,17 +709,21 @@ export default function MovementScreen({
             </div>
 
             {/* Quantity */}
-            <div className="space-y-2 md:col-span-2">
+            <div className="space-y-2 md:col-span-3">
               <label className="flex items-center justify-center gap-1.5 text-sm font-semibold text-slate-700">
                 <Layers className="h-4 w-4 text-indigo-500" />
                 Quantidade
               </label>
-              <div className="relative mx-auto w-full">
+              <div className="flex items-center h-12 w-full rounded-xl border border-slate-200 bg-white p-1 focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 transition-all">
                 <button
                   type="button"
                   disabled={!isConferenceStarted}
-                  onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                  className="absolute left-1 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-lg bg-slate-100 text-slate-700 font-bold transition-colors hover:bg-slate-200 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                  onClick={() => {
+                    const current = typeof quantity === 'number' ? quantity : (parseInt(quantity as string, 10) || 1);
+                    setQuantity(Math.max(1, current - 1));
+                  }}
+                  className="h-10 w-10 shrink-0 flex items-center justify-center rounded-lg bg-slate-100 text-slate-700 font-bold text-lg transition-colors hover:bg-slate-200 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                  title="Diminuir quantidade"
                 >
                   -
                 </button>
@@ -749,15 +732,38 @@ export default function MovementScreen({
                   id="qty-input"
                   min="1"
                   value={quantity}
-                  onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                  placeholder="1"
+                  onFocus={() => {
+                    setQuantity('' as any);
+                  }}
+                  onBlur={() => {
+                    if (quantity === '' || !quantity || Number(quantity) <= 0) {
+                      setQuantity(1);
+                    }
+                  }}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === '') {
+                      setQuantity('' as any);
+                      return;
+                    }
+                    const parsed = parseInt(val, 10);
+                    if (!isNaN(parsed)) {
+                      setQuantity(Math.max(1, parsed));
+                    }
+                  }}
                   disabled={!isConferenceStarted}
-                  className="h-12 w-full rounded-xl border border-slate-200 bg-white px-12 text-center text-lg font-semibold text-slate-800 focus:outline-none focus:border-indigo-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
+                  className="h-full flex-1 min-w-0 bg-transparent px-2 text-center text-lg font-black text-slate-800 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
                 />
                 <button
                   type="button"
                   disabled={!isConferenceStarted}
-                  onClick={() => setQuantity(quantity + 1)}
-                  className="absolute right-1 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-lg bg-slate-100 text-slate-700 font-bold transition-colors hover:bg-slate-200 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                  onClick={() => {
+                    const current = typeof quantity === 'number' ? quantity : (parseInt(quantity as string, 10) || 0);
+                    setQuantity(current + 1);
+                  }}
+                  className="h-10 w-10 shrink-0 flex items-center justify-center rounded-lg bg-slate-100 text-slate-700 font-bold text-lg transition-colors hover:bg-slate-200 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                  title="Aumentar quantidade"
                 >
                   +
                 </button>

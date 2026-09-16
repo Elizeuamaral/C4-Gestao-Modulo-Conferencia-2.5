@@ -32,7 +32,9 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   ],
   soundBeepEnabled: true,
   soundAlertEnabled: true,
-  criticalExpiryDays: 25,
+  criticalExpiryDays: 30,
+  warningExpiryDays: 90,
+  safeExpiryDays: 90,
   adminPassword: '@Maral22',
 };
 
@@ -55,6 +57,12 @@ export function loadStoredSettings(): AppSettings {
       criticalExpiryDays: Number(parsed.criticalExpiryDays) > 0
         ? Number(parsed.criticalExpiryDays)
         : DEFAULT_APP_SETTINGS.criticalExpiryDays,
+      warningExpiryDays: Number(parsed.warningExpiryDays) > 0
+        ? Number(parsed.warningExpiryDays)
+        : DEFAULT_APP_SETTINGS.warningExpiryDays ?? 90,
+      safeExpiryDays: Number(parsed.safeExpiryDays) > 0
+        ? Number(parsed.safeExpiryDays)
+        : (Number(parsed.warningExpiryDays) || 90),
       adminPassword: parsed.adminPassword || DEFAULT_APP_SETTINGS.adminPassword,
     };
   } catch {

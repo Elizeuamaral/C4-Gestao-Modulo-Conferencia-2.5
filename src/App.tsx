@@ -32,7 +32,7 @@ import {
   X
 } from 'lucide-react';
 
-const APP_VERSION = '2.0.0';
+const APP_VERSION = '2.5.0';
 
 const toIsoDate = (date: Date) => {
   const year = date.getFullYear();
@@ -367,6 +367,12 @@ export default function App() {
 
       return stockCopy;
     });
+
+    // Sincroniza produto na Base de Dados caso ainda não exista
+    setProducts((prev) => {
+      if (prev.some((p) => p.code === newMov.productCode)) return prev;
+      return [{ code: newMov.productCode, name: newMov.productName, category: 'Geral' }, ...prev];
+    });
   };
 
   const handleDeleteMovement = (movementId: string) => {
@@ -680,23 +686,14 @@ export default function App() {
   };
 
   const handleResetDatabase = () => {
-    const password = window.prompt('Digite a senha para limpar a base geral:');
-    if (password !== settings.adminPassword) {
-      showNotification('Senha inválida. A base não foi apagada.', 'info');
-      return;
-    }
-    const confirmed = window.confirm(
-      'Atenção: Isso irá APAGAR de forma irreversível todos os produtos cadastrados, estoque atual e histórico de movimentações. Deseja iniciar uma base limpa?'
-    );
-    if (confirmed) {
-      localStorage.removeItem('fast_stock_products');
-      localStorage.removeItem('fast_stock_inventory');
-      localStorage.removeItem('fast_stock_movements');
-      setProducts([]);
-      setStock([]);
-      setMovements([]);
-      showNotification('Base de dados limpa com sucesso!', 'info');
-    }
+    localStorage.removeItem('fast_stock_products');
+    localStorage.removeItem('fast_stock_inventory');
+    localStorage.removeItem('fast_stock_movements');
+    setProducts([]);
+    setStock([]);
+    setMovements([]);
+    playSuccessBeep(true);
+    showNotification('Base de dados limpa com sucesso!', 'info');
   };
 
   const handleConfirmConfigPassword = (e: React.FormEvent) => {
@@ -867,22 +864,32 @@ export default function App() {
               onDeleteMovement={handleDeleteMovement}
               onStockTransfer={handleStockTransfer}
               onUpdateStockItem={handleUpdateStockItem}
+              onDeleteStockItem={handleDeleteStockItem}
             />
           )}
 
           {activeScreen === 'CONFIGURACAO' && (
             <SettingsScreen
               products={products}
-              stock={stock}
-              movements={movements}
               settings={settings}
-              onUpdateStockItem={handleUpdateStockItem}
-              onDeleteStockItem={handleDeleteStockItem}
-              onAddStockItem={handleAddStockItem}
-              onImportData={handleImportData}
-              onRestoreBackup={handleRestoreBackup}
-              onResetDatabase={handleResetDatabase}
+              onAddProduct={handleAddProduct}
+              onUpdateProduct={handleUpdateProduct}
+              onDeleteProduct={handleDeleteProduct}
+              onImportProducts={(newProducts) => {
+                const map = new Map<string, Product>();
+                products.forEach((p) => map.set(p.code, p));
+                newProducts.forEach((p) => map.set(p.code, p));
+                const merged = Array.from(map.values());
+                setProducts(merged);
+                showNotification(`${newProducts.length} produto(s) importado(s) na Base de Dados!`, 'success');
+              }}
+              onResetProducts={() => {
+                setProducts([]);
+                localStorage.removeItem('fast_stock_products');
+                showNotification('Base de Dados de produtos limpa com sucesso!', 'info');
+              }}
               onNotify={showNotification}
+              onUpdateSettings={handleUpdateSettings}
             />
           )}
         </div>

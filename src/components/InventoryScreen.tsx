@@ -21,8 +21,7 @@ import {
   AlertCircle,
   Filter,
   ChevronDown,
-  Boxes,
-  Layers
+  Trash2
 } from 'lucide-react';
 
 interface InventoryScreenProps {
@@ -41,6 +40,7 @@ interface InventoryScreenProps {
     updatedItem: StockItem,
     audit: { checkerName: string; reason: string }
   ) => void;
+  onDeleteStockItem?: (id: string) => void;
 }
 
 export default function InventoryScreen({
@@ -50,8 +50,10 @@ export default function InventoryScreen({
   settings,
   onDeleteMovement,
   onStockTransfer,
-  onUpdateStockItem
+  onUpdateStockItem,
+  onDeleteStockItem
 }: InventoryScreenProps) {
+  const [itemToDelete, setItemToDelete] = useState<StockItem | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [expirationStatusFilter, setExpirationStatusFilter] = useState<
     'TODOS' | 'URGENTE' | 'SEGURO' | 'VENCIDO' | 'ALERTA' | 'SEM_VENC'
@@ -177,8 +179,11 @@ export default function InventoryScreen({
 
     if (daysRemaining < 0) return 'VENCIDO' as const;
     const criticalThreshold = settings?.criticalExpiryDays ?? 30;
+    const warningThreshold = settings?.warningExpiryDays ?? 90;
+    const safeThreshold = settings?.safeExpiryDays ?? warningThreshold;
     if (daysRemaining <= criticalThreshold) return 'URGENTE' as const;
-    if (daysRemaining <= 90) return 'ALERTA' as const;
+    if (daysRemaining <= warningThreshold) return 'ALERTA' as const;
+    if (daysRemaining > safeThreshold) return 'SEGURO' as const;
     return 'SEGURO' as const;
   };
 
@@ -219,10 +224,6 @@ export default function InventoryScreen({
     return matchesSearch && matchesExpirationStatus && matchesAddress && matchesMethod;
   });
 
-  const totalItemsInStock = activeStock.reduce((sum, item) => sum + item.quantity, 0);
-  const totalUniqueProductsInStock = new Set(activeStock.map((item) => item.productCode)).size;
-  const totalLotsInStock = activeStock.length;
-
   const formatDateTime = (isoString: string) => {
     try {
       const d = new Date(isoString);
@@ -262,6 +263,8 @@ export default function InventoryScreen({
     }
 
     const criticalThreshold = settings?.criticalExpiryDays ?? 30;
+    const warningThreshold = settings?.warningExpiryDays ?? 90;
+    const safeThreshold = settings?.safeExpiryDays ?? warningThreshold;
     if (daysRemaining <= criticalThreshold) {
       return {
         warningBg: 'bg-amber-100 text-amber-900 border border-amber-300',
@@ -270,7 +273,7 @@ export default function InventoryScreen({
       };
     }
 
-    if (daysRemaining <= 90) {
+    if (daysRemaining <= warningThreshold) {
       return {
         warningBg: 'bg-yellow-50 text-yellow-800 border border-yellow-200',
         warningText: `Alerta (${daysRemaining}d)`,
@@ -315,39 +318,6 @@ export default function InventoryScreen({
 
   return (
     <div className="max-w-7xl mx-auto p-4 space-y-4">
-      {/* Top Banner & KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm flex items-center justify-between">
-          <div>
-            <div className="text-slate-400 font-bold text-xs uppercase tracking-wider">Itens Totais em Estoque</div>
-            <div className="text-2xl font-black text-slate-800 font-mono mt-1">{totalItemsInStock}</div>
-          </div>
-          <div className="bg-indigo-50 text-indigo-600 p-2.5 rounded-xl">
-            <Archive className="h-6 w-6" />
-          </div>
-        </div>
-
-        <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm flex items-center justify-between">
-          <div>
-            <div className="text-slate-400 font-bold text-xs uppercase tracking-wider">Produtos Distintos</div>
-            <div className="text-2xl font-black text-slate-800 font-mono mt-1">{totalUniqueProductsInStock}</div>
-          </div>
-          <div className="bg-emerald-50 text-emerald-600 p-2.5 rounded-xl">
-            <Boxes className="h-6 w-6" />
-          </div>
-        </div>
-
-        <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm flex items-center justify-between">
-          <div>
-            <div className="text-slate-400 font-bold text-xs uppercase tracking-wider">Lotes Ativos</div>
-            <div className="text-2xl font-black text-slate-800 font-mono mt-1">{totalLotsInStock}</div>
-          </div>
-          <div className="bg-blue-50 text-blue-600 p-2.5 rounded-xl">
-            <Layers className="h-6 w-6" />
-          </div>
-        </div>
-      </div>
-
       {/* Search and Combobox Filters Card */}
       <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm flex flex-col gap-3">
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
@@ -396,8 +366,8 @@ export default function InventoryScreen({
               >
                 <option value="TODOS">Validade: Todas as Opções</option>
                 <option value="URGENTE">Urgentes (≤ {settings?.criticalExpiryDays ?? 30} dias)</option>
-                <option value="ALERTA">Alerta (≤ 90 dias)</option>
-                <option value="SEGURO">Seguros (&gt; 90 dias)</option>
+                <option value="ALERTA">Alerta (≤ {settings?.warningExpiryDays ?? 90} dias)</option>
+                <option value="SEGURO">Seguros (&gt; {settings?.safeExpiryDays ?? settings?.warningExpiryDays ?? 90} dias)</option>
                 <option value="VENCIDO">Vencidos</option>
                 <option value="SEM_VENC">Sem Vencimento</option>
               </select>
@@ -580,11 +550,21 @@ export default function InventoryScreen({
                               <button
                                 type="button"
                                 onClick={() => openTransferModal(item)}
-                                className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition"
+                                className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition cursor-pointer"
                                 title="Movimentar ou transferir item"
                               >
                                 <ArrowRightLeft className="h-4 w-4" />
                               </button>
+                              {onDeleteStockItem && (
+                                <button
+                                  type="button"
+                                  onClick={() => setItemToDelete(item)}
+                                  className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                                  title="Remover item do estoque"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -647,8 +627,9 @@ export default function InventoryScreen({
                     type="number"
                     min={1}
                     value={editQuantity}
+                    onFocus={(e) => e.target.select()}
                     onChange={(e) => setEditQuantity(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                    className="w-full px-3 py-2 text-sm rounded-xl border border-slate-200 bg-white text-slate-800 font-bold focus:outline-none focus:border-indigo-500"
+                    className="w-full px-3 py-2 text-sm rounded-xl border border-slate-200 bg-white text-slate-800 font-bold focus:outline-none focus:border-indigo-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   />
                 </div>
                 <div>
@@ -865,8 +846,9 @@ export default function InventoryScreen({
                   min={1}
                   max={selectedTransferItem.quantity}
                   value={transferQuantity}
+                  onFocus={(e) => e.target.select()}
                   onChange={(e) => setTransferQuantity(Math.min(selectedTransferItem.quantity, Math.max(1, Number(e.target.value) || 1)))}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-800 focus:outline-none focus:border-indigo-500"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-800 focus:outline-none focus:border-indigo-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />
               </div>
 
@@ -895,6 +877,64 @@ export default function InventoryScreen({
                 className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white hover:bg-indigo-500"
               >
                 Confirmar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Confirmar Exclusão de Item de Estoque */}
+      {itemToDelete && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-150"
+          onClick={() => setItemToDelete(null)}
+        >
+          <div
+            className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 text-slate-800 border-b border-slate-100 pb-3">
+              <div className="p-2.5 rounded-xl bg-rose-50 text-rose-600">
+                <Trash2 className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-base text-slate-900">Remover do Estoque</h3>
+                <p className="text-xs text-slate-400">Exclusão do registro no estoque ativo</p>
+              </div>
+            </div>
+
+            <div className="text-xs text-slate-600 leading-relaxed space-y-1">
+              <p>
+                Deseja realmente remover o registro de{' '}
+                <strong className="text-slate-900 font-bold">{itemToDelete.productName}</strong> do estoque?
+              </p>
+              <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200/60 text-[11px] font-mono space-y-0.5">
+                <div>Código: <span className="font-bold">{itemToDelete.productCode}</span></div>
+                <div>Lote: <span className="font-bold">{itemToDelete.lot}</span></div>
+                <div>Quantidade: <span className="font-bold">{itemToDelete.quantity} {itemToDelete.unit}</span></div>
+                <div>Endereço: <span className="font-bold">{itemToDelete.address}</span></div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setItemToDelete(null)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (itemToDelete && onDeleteStockItem) {
+                    onDeleteStockItem(itemToDelete.id);
+                  }
+                  setItemToDelete(null);
+                }}
+                className="bg-rose-600 hover:bg-rose-500 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-sm transition cursor-pointer"
+              >
+                Sim, Remover
               </button>
             </div>
           </div>
