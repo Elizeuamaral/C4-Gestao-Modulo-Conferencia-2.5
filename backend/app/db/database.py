@@ -1,7 +1,6 @@
 """SQLite/SQLAlchemy connection and session configuration for C4 Gestão.
 
-C4-DB-002 intentionally does not create tables. Database initialization is
-handled by the next step, C4-DB-003.
+Table creation is handled explicitly by C4-DB-003 through init_db.py.
 """
 
 from __future__ import annotations
