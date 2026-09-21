@@ -6,3 +6,7 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# C4 Gestão runtime database
+backend/data/*.db
+backend/data/*.db-*
