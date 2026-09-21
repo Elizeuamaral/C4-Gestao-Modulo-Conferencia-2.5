@@ -56,6 +56,7 @@ class Product(Base):
 
     __table_args__ = (
         CheckConstraint("min_stock >= 0", name="ck_products_min_stock_nonnegative"),
+        CheckConstraint("active IN (0, 1)", name="ck_products_active"),
         Index("idx_products_active", "active"),
     )
 
