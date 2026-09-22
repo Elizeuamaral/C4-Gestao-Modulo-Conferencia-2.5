@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -38,7 +38,6 @@ def _stock_identity_values(values: dict[str, object]) -> tuple[object, ...]:
         values.get("supplier"),
         values.get("invoice_number"),
         values.get("received_date"),
-        values.get("notes"),
     )
 
 
@@ -54,7 +53,6 @@ def _stock_identity_from_item(item: StockItem) -> tuple[object, ...]:
         item.supplier,
         item.invoice_number,
         item.received_date,
-        item.notes,
     )
 
 
