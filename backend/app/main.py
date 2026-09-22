@@ -1,7 +1,7 @@
 """FastAPI application entry point for C4 Gestão.
 
-C4-API-002 adds the health/diagnostic route used to validate the API and
-SQLite runtime before domain endpoints are introduced.
+C4-API-003 adds the product domain routes while preserving the validated
+C4-API-002 health/diagnostic route.
 """
 
 from __future__ import annotations
