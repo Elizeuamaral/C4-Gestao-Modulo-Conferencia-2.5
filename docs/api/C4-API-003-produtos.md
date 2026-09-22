@@ -37,7 +37,7 @@ Parâmetros:
 - `limit`: de 1 a 200; padrão 50.
 - `offset`: deslocamento; padrão 0.
 
-Para consultar ativos e inativos juntos, usar `active=null` diretamente na chamada HTTP.
+Para consultar apenas inativos, usar `active=false`. O filtro padrão é `active=true`; a consulta conjunta de ativos e inativos será exposta por parâmetro próprio quando necessário.
 
 Retorna total, paginação e itens.
 
