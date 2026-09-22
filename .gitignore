@@ -7,6 +7,10 @@ coverage/
 .env*
 !.env.example
 
+# Python runtime cache
+__pycache__/
+*.py[cod]
+
 # C4 Gestão runtime database
 backend/data/*.db
 backend/data/*.db-*
