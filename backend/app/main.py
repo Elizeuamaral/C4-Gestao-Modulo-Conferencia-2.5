@@ -1,7 +1,7 @@
 """FastAPI application entry point for C4 Gestão.
 
-C4-API-003 adds the product domain routes while preserving the validated
-C4-API-002 health/diagnostic route.
+C4-API-004 adds location and checker domain routes while preserving the
+validated C4-API-002 health and C4-API-003 product routes.
 """
 
 from __future__ import annotations
@@ -9,7 +9,9 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from backend.app.api.routes.checkers import router as checkers_router
 from backend.app.api.routes.health import router as health_router
+from backend.app.api.routes.locations import router as locations_router
 from backend.app.api.routes.products import router as products_router
 from backend.app.core.config import settings
 
@@ -41,6 +43,8 @@ def create_app() -> FastAPI:
 
     app.include_router(health_router)
     app.include_router(products_router)
+    app.include_router(locations_router)
+    app.include_router(checkers_router)
 
     return app
 
