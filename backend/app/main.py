@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.app.api.routes.checkers import router as checkers_router
 from backend.app.api.routes.health import router as health_router
 from backend.app.api.routes.locations import router as locations_router
+from backend.app.api.routes.movements import router as movements_router
 from backend.app.api.routes.products import router as products_router
 from backend.app.api.routes.stock import router as stock_router
 from backend.app.core.config import settings
@@ -47,6 +48,7 @@ def create_app() -> FastAPI:
     app.include_router(locations_router)
     app.include_router(checkers_router)
     app.include_router(stock_router)
+    app.include_router(movements_router)
 
     return app
 
