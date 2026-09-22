@@ -1,8 +1,7 @@
 """FastAPI application entry point for C4 Gestão.
 
-C4-API-001 establishes the backend application shell only.
-Business endpoints, health diagnostics, and domain routes are added in later
-C4-API commits.
+C4-API-002 adds the health/diagnostic route used to validate the API and
+SQLite runtime before domain endpoints are introduced.
 """
 
 from __future__ import annotations
@@ -10,6 +9,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from backend.app.api.routes.health import router as health_router
 from backend.app.core.config import settings
 
 
@@ -37,6 +37,8 @@ def create_app() -> FastAPI:
             "version": settings.app_version,
             "status": "running",
         }
+
+    app.include_router(health_router)
 
     return app
 
