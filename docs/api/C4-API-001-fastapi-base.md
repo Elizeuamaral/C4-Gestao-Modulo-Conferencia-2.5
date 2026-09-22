@@ -6,13 +6,13 @@ Criar a camada inicial do backend FastAPI do C4 Gestão — Módulo Conferência
 
 ## Implementado
 
-- pacote raiz backend;
-- pacote de configuração backend/app/core;
-- configuração de runtime com pydantic-settings;
-- aplicação FastAPI em backend/app/main.py;
-- factory create_app();
+- pacote raiz `backend`;
+- pacote de configuração `backend/app/core`;
+- configuração de runtime com `pydantic-settings`;
+- aplicação FastAPI em `backend/app/main.py`;
+- factory `create_app()`;
 - CORS configurável por variável de ambiente;
-- endpoint raiz GET / para identificação básica da API;
+- endpoint raiz `GET /` para identificação básica da API;
 - execução direta com Uvicorn.
 
 ## Configuração
@@ -21,14 +21,15 @@ Variáveis suportadas:
 
 | Variável | Padrão |
 |---|---|
-| C4_API_NAME | C4 Gestão API |
-| API_HOST | 127.0.0.1 |
-| API_PORT | 8000 |
-| CORS_ORIGINS | http://localhost:5173,http://127.0.0.1:5173 |
+| `C4_API_NAME` | `C4 Gestão API` |
+| `C4_API_VERSION` | `2.5.0` |
+| `C4_API_HOST` | `127.0.0.1` |
+| `C4_API_PORT` | `8000` |
+| `C4_CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` |
 
-A configuração também aceita valores definidos em .env, quando esse arquivo existir.
+A configuração também aceita valores definidos em `.env`, quando esse arquivo existir.
 
-> Observação: a configuração atual mantém CORS explícito e não utiliza *.
+> Observação: a configuração atual mantém CORS explícito e não utiliza `*`.
 
 ## Execução
 
