@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -69,8 +68,8 @@ class ProductResponse(BaseModel):
     category: str | None
     min_stock: float
     active: bool
-    created_at: datetime
-    updated_at: datetime
+    created_at: str
+    updated_at: str
 
 
 class ProductListResponse(BaseModel):
