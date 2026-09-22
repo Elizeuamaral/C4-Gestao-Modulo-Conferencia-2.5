@@ -19,8 +19,9 @@ A identidade operacional usada para impedir duplicação considera:
 - indicador de sem validade;
 - fornecedor;
 - nota fiscal;
-- data de recebimento;
-- observações.
+- data de recebimento.
+
+**Observações (`notes`) não fazem parte da identidade operacional.** Elas são metadados descritivos e podem ser diferentes entre registros sem tornar o saldo operacionalmente diferente.
 
 Essa regra é aplicada no serviço, conforme a modelagem definida em C4-DB-001.
 
@@ -65,11 +66,18 @@ Alterações de quantidade serão feitas pelas operações de movimentação do 
 - quantidade recebida não pode ser negativa;
 - validade é obrigatória quando `no_expiration_date=false`;
 - validade deve ser nula quando `no_expiration_date=true`;
-- identidade operacional duplicada retorna HTTP 409.
+- identidade operacional duplicada retorna HTTP 409;
+- alterações somente em `notes` não criam uma nova identidade operacional.
+
+## Regra de reconciliação dos testes
+
+Os dois registros criados durante a validação anterior possuem a mesma identidade operacional e diferem apenas em `notes`. Eles são considerados dados de teste duplicados após a correção da regra.
+
+A limpeza desses registros deve ser executada de forma controlada antes do C4-API-006, sem alterar a quantidade por meio do PUT e sem criar movimentações artificiais.
 
 ## Escopo preservado
 
-Este commit não altera:
+Este ajuste não altera:
 
 - modelagem SQLite;
 - produtos;
