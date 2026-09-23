@@ -8,9 +8,12 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.movement_adjustments import ReverseMovementRequest
+from backend.app.api.schemas.movement_adjustments import (
+    CorrectMovementRequest,
+    ReverseMovementRequest,
+)
 from backend.app.api.schemas.movements import MovementCreate
-from backend.app.db.models import Checker, Location, Movement, Product, StockItem
+from backend.app.db.models import Checker, Movement, Product, StockItem
 
 
 class MovementConflictError(Exception):
@@ -50,17 +53,11 @@ def _validate_stock_item(
     field_name: str,
 ) -> None:
     if item.product_id != product_id:
-        raise MovementValidationError(
-            f"{field_name} belongs to a different product."
-        )
+        raise MovementValidationError(f"{field_name} belongs to a different product.")
     if item.unit != unit:
-        raise MovementValidationError(
-            f"{field_name} uses a different unit from the movement."
-        )
+        raise MovementValidationError(f"{field_name} uses a different unit from the movement.")
     if expected_location_id is not None and item.location_id != expected_location_id:
-        raise MovementValidationError(
-            f"{field_name} is not associated with the expected location."
-        )
+        raise MovementValidationError(f"{field_name} is not associated with the expected location.")
 
 
 def _snapshot(item: StockItem, product: Product) -> dict[str, object]:
@@ -135,9 +132,7 @@ def create_movement(
             field_name="destination_stock_item_id",
         )
         if values.get("source_stock_item_id") is not None:
-            raise MovementValidationError(
-                "source_stock_item_id must be null for ENTRADA."
-            )
+            raise MovementValidationError("source_stock_item_id must be null for ENTRADA.")
         if destination.quantity < 0:
             raise MovementValidationError("Destination stock has an invalid quantity.")
         _apply_delta(destination, values["quantity"])
@@ -158,9 +153,7 @@ def create_movement(
             field_name="source_stock_item_id",
         )
         if values.get("destination_stock_item_id") is not None:
-            raise MovementValidationError(
-                "destination_stock_item_id must be null for SAIDA."
-            )
+            raise MovementValidationError("destination_stock_item_id must be null for SAIDA.")
         _validate_quantity(source, values["quantity"])
         _apply_delta(source, -values["quantity"])
         source_location_id = source.location_id
@@ -191,13 +184,9 @@ def create_movement(
             field_name="destination_stock_item_id",
         )
         if source.id == destination.id:
-            raise MovementValidationError(
-                "Source and destination stock items must be different."
-            )
+            raise MovementValidationError("Source and destination stock items must be different.")
         if source.location_id == destination.location_id:
-            raise MovementValidationError(
-                "Source and destination locations must be different."
-            )
+            raise MovementValidationError("Source and destination locations must be different.")
         _validate_quantity(source, values["quantity"])
         _apply_delta(source, -values["quantity"])
         _apply_delta(destination, values["quantity"])
@@ -279,7 +268,6 @@ def list_movements(
 def get_movement(db: Session, movement_id: str) -> Movement | None:
     """Return a movement by ID."""
     return db.get(Movement, movement_id)
-
 
 
 def reverse_movement(
@@ -430,6 +418,204 @@ def reverse_movement(
             if existing is not None:
                 return existing, True
         raise MovementConflictError("Movement reversal could not be recorded.") from exc
+
+    db.refresh(movement)
+    return movement, False
+
+
+def correct_movement(
+    db: Session,
+    movement_id: str,
+    payload: CorrectMovementRequest,
+) -> tuple[Movement, bool]:
+    """Correct the quantity of an original movement without changing it."""
+
+    values = payload.model_dump()
+
+    if values.get("idempotency_key"):
+        existing = db.scalar(
+            select(Movement).where(
+                Movement.idempotency_key == values["idempotency_key"]
+            )
+        )
+        if existing is not None:
+            return existing, True
+
+    original = db.get(Movement, movement_id)
+    if original is None:
+        raise MovementValidationError("Movement not found.")
+
+    if original.type not in {"ENTRADA", "SAIDA", "TRANSFERENCIA"}:
+        raise MovementConflictError(
+            "Only ENTRADA, SAIDA or TRANSFERENCIA movements can be corrected."
+        )
+
+    if original.reversal_of_id is not None:
+        raise MovementConflictError("A reversal cannot be corrected.")
+
+    if original.correction_of_id is not None:
+        raise MovementConflictError("A correction cannot be corrected.")
+
+    already_corrected = db.scalar(
+        select(Movement.id).where(Movement.correction_of_id == original.id)
+    )
+    if already_corrected is not None:
+        raise MovementConflictError("This movement has already been corrected.")
+
+    _validate_checker(db, values.get("checker_id"))
+
+    correct_quantity = values["correct_quantity"]
+    delta = correct_quantity - original.quantity
+
+    if delta == 0:
+        raise MovementConflictError("Correct quantity must differ from the original quantity.")
+
+    source = None
+    destination = None
+
+    if original.type == "ENTRADA":
+        stock = _get_stock_item(
+            db,
+            original.destination_stock_item_id,
+            "destination_stock_item_id",
+        )
+        _validate_stock_item(
+            stock,
+            product_id=original.product_id,
+            unit=original.unit,
+            field_name="destination_stock_item_id",
+        )
+        if delta > 0:
+            destination = stock
+            _apply_delta(destination, delta)
+            source_location_id = None
+            destination_location_id = destination.location_id
+        else:
+            source = stock
+            _validate_quantity(source, -delta)
+            _apply_delta(source, delta)
+            source_location_id = source.location_id
+            destination_location_id = None
+
+    elif original.type == "SAIDA":
+        stock = _get_stock_item(
+            db,
+            original.source_stock_item_id,
+            "source_stock_item_id",
+        )
+        _validate_stock_item(
+            stock,
+            product_id=original.product_id,
+            unit=original.unit,
+            field_name="source_stock_item_id",
+        )
+        if delta > 0:
+            source = stock
+            _validate_quantity(source, delta)
+            _apply_delta(source, -delta)
+            source_location_id = source.location_id
+            destination_location_id = None
+        else:
+            destination = stock
+            _apply_delta(destination, -delta)
+            source_location_id = None
+            destination_location_id = destination.location_id
+
+    else:
+        original_source = _get_stock_item(
+            db,
+            original.source_stock_item_id,
+            "source_stock_item_id",
+        )
+        original_destination = _get_stock_item(
+            db,
+            original.destination_stock_item_id,
+            "destination_stock_item_id",
+        )
+        _validate_stock_item(
+            original_source,
+            product_id=original.product_id,
+            unit=original.unit,
+            expected_location_id=original.source_location_id,
+            field_name="source_stock_item_id",
+        )
+        _validate_stock_item(
+            original_destination,
+            product_id=original.product_id,
+            unit=original.unit,
+            expected_location_id=original.destination_location_id,
+            field_name="destination_stock_item_id",
+        )
+        if original_source.id == original_destination.id:
+            raise MovementValidationError("Source and destination stock items must be different.")
+
+        if delta > 0:
+            _validate_quantity(original_source, delta)
+            _apply_delta(original_source, -delta)
+            _apply_delta(original_destination, delta)
+        else:
+            _validate_quantity(original_destination, -delta)
+            _apply_delta(original_source, -delta)
+            _apply_delta(original_destination, delta)
+
+        source = original_source
+        destination = original_destination
+        source_location_id = original_source.location_id
+        destination_location_id = original_destination.location_id
+
+    if source is not None:
+        snapshot_item = source
+    else:
+        snapshot_item = destination
+
+    movement = Movement(
+        product_id=original.product_id,
+        type="CORRECAO",
+        quantity=abs(delta),
+        unit=original.unit,
+        source_stock_item_id=source.id if source else None,
+        destination_stock_item_id=destination.id if destination else None,
+        source_location_id=source_location_id,
+        destination_location_id=destination_location_id,
+        product_code_snapshot=original.product_code_snapshot,
+        product_name_snapshot=original.product_name_snapshot,
+        lot_snapshot=original.lot_snapshot,
+        manufacturing_date=original.manufacturing_date,
+        expiration_date=original.expiration_date,
+        no_expiration_date=original.no_expiration_date,
+        supplier=original.supplier,
+        invoice_number=original.invoice_number,
+        checker_id=values.get("checker_id"),
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        received_date=original.received_date,
+        entry_method="CORRECAO",
+        updated_by_checker_id=values.get("checker_id"),
+        updated_at=datetime.now(timezone.utc).isoformat(),
+        update_reason=values["reason"],
+        notes=(
+            f"Correção da movimentação {original.id}. "
+            f"Quantidade original: {original.quantity:g}; "
+            f"quantidade corrigida: {correct_quantity:g}; "
+            f"ajuste aplicado: {delta:+g}."
+        ),
+        correction_of_id=original.id,
+        idempotency_key=values.get("idempotency_key"),
+    )
+    db.add(movement)
+
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        if values.get("idempotency_key"):
+            existing = db.scalar(
+                select(Movement).where(
+                    Movement.idempotency_key == values["idempotency_key"]
+                )
+            )
+            if existing is not None:
+                return existing, True
+        raise MovementConflictError("Movement correction could not be recorded.") from exc
 
     db.refresh(movement)
     return movement, False
