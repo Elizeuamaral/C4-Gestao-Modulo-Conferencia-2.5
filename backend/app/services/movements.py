@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from backend.app.api.schemas.movement_adjustments import ReverseMovementRequest
 from backend.app.api.schemas.movements import MovementCreate
 from backend.app.db.models import Checker, Location, Movement, Product, StockItem
 
@@ -278,3 +279,157 @@ def list_movements(
 def get_movement(db: Session, movement_id: str) -> Movement | None:
     """Return a movement by ID."""
     return db.get(Movement, movement_id)
+
+
+
+def reverse_movement(
+    db: Session,
+    movement_id: str,
+    payload: ReverseMovementRequest,
+) -> tuple[Movement, bool]:
+    """Reverse an ENTRADA, SAIDA or TRANSFERENCIA without changing the original."""
+
+    values = payload.model_dump()
+
+    if values.get("idempotency_key"):
+        existing = db.scalar(
+            select(Movement).where(
+                Movement.idempotency_key == values["idempotency_key"]
+            )
+        )
+        if existing is not None:
+            return existing, True
+
+    original = db.get(Movement, movement_id)
+    if original is None:
+        raise MovementValidationError("Movement not found.")
+
+    if original.type not in {"ENTRADA", "SAIDA", "TRANSFERENCIA"}:
+        raise MovementConflictError(
+            "Only ENTRADA, SAIDA or TRANSFERENCIA movements can be reversed."
+        )
+
+    if original.reversal_of_id is not None:
+        raise MovementConflictError("A reversal cannot be reversed.")
+
+    already_reversed = db.scalar(
+        select(Movement.id).where(Movement.reversal_of_id == original.id)
+    )
+    if already_reversed is not None:
+        raise MovementConflictError("This movement has already been reversed.")
+
+    _validate_checker(db, values.get("checker_id"))
+
+    source = None
+    destination = None
+
+    if original.type == "ENTRADA":
+        destination = _get_stock_item(
+            db,
+            original.destination_stock_item_id,
+            "destination_stock_item_id",
+        )
+        _validate_stock_item(
+            destination,
+            product_id=original.product_id,
+            unit=original.unit,
+            field_name="destination_stock_item_id",
+        )
+        _validate_quantity(destination, original.quantity)
+        _apply_delta(destination, -original.quantity)
+        source_location_id = None
+        destination_location_id = None
+
+    elif original.type == "SAIDA":
+        source = _get_stock_item(
+            db,
+            original.source_stock_item_id,
+            "source_stock_item_id",
+        )
+        _validate_stock_item(
+            source,
+            product_id=original.product_id,
+            unit=original.unit,
+            field_name="source_stock_item_id",
+        )
+        _apply_delta(source, original.quantity)
+        source_location_id = None
+        destination_location_id = source.location_id
+
+    else:
+        source = _get_stock_item(
+            db,
+            original.destination_stock_item_id,
+            "destination_stock_item_id",
+        )
+        destination = _get_stock_item(
+            db,
+            original.source_stock_item_id,
+            "source_stock_item_id",
+        )
+        _validate_stock_item(
+            source,
+            product_id=original.product_id,
+            unit=original.unit,
+            expected_location_id=original.destination_location_id,
+            field_name="destination_stock_item_id",
+        )
+        _validate_stock_item(
+            destination,
+            product_id=original.product_id,
+            unit=original.unit,
+            expected_location_id=original.source_location_id,
+            field_name="source_stock_item_id",
+        )
+        _validate_quantity(source, original.quantity)
+        _apply_delta(source, -original.quantity)
+        _apply_delta(destination, original.quantity)
+        source_location_id = source.location_id
+        destination_location_id = destination.location_id
+
+    movement = Movement(
+        product_id=original.product_id,
+        type="ESTORNO",
+        quantity=original.quantity,
+        unit=original.unit,
+        source_stock_item_id=source.id if source else None,
+        destination_stock_item_id=destination.id if destination else None,
+        source_location_id=source_location_id,
+        destination_location_id=destination_location_id,
+        product_code_snapshot=original.product_code_snapshot,
+        product_name_snapshot=original.product_name_snapshot,
+        lot_snapshot=original.lot_snapshot,
+        manufacturing_date=original.manufacturing_date,
+        expiration_date=original.expiration_date,
+        no_expiration_date=original.no_expiration_date,
+        supplier=original.supplier,
+        invoice_number=original.invoice_number,
+        checker_id=values.get("checker_id"),
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        received_date=original.received_date,
+        entry_method="ESTORNO",
+        updated_by_checker_id=values.get("checker_id"),
+        updated_at=datetime.now(timezone.utc).isoformat(),
+        update_reason=values["reason"],
+        notes=f"Estorno da movimentação {original.id}.",
+        reversal_of_id=original.id,
+        idempotency_key=values.get("idempotency_key"),
+    )
+    db.add(movement)
+
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        if values.get("idempotency_key"):
+            existing = db.scalar(
+                select(Movement).where(
+                    Movement.idempotency_key == values["idempotency_key"]
+                )
+            )
+            if existing is not None:
+                return existing, True
+        raise MovementConflictError("Movement reversal could not be recorded.") from exc
+
+    db.refresh(movement)
+    return movement, False
