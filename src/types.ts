@@ -4,6 +4,7 @@
  */
 
 export interface Product {
+  id?: string; // ID do produto no backend
   code: string; // Barcode or unique product code
   name: string;
   category?: string;
