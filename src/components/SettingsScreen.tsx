@@ -199,7 +199,7 @@ export default function SettingsScreen({
   };
 
   // Save product (add or update)
-  const handleSaveProduct = (e: React.FormEvent) => {
+  const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     setProductModalError(null);
 
@@ -229,7 +229,7 @@ export default function SettingsScreen({
     }
 
     if (editingProduct) {
-      onUpdateProduct(
+      await onUpdateProduct(
         {
           ...editingProduct,
           code: cleanCode,
@@ -240,7 +240,7 @@ export default function SettingsScreen({
       );
       onNotify(`Produto "${cleanName}" atualizado com sucesso!`, 'success');
     } else {
-      onAddProduct({
+      await onAddProduct({
         code: cleanCode,
         name: cleanName,
         category: 'Geral'
