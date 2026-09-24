@@ -26,7 +26,7 @@ class Settings(BaseSettings):
         validation_alias="C4_API_PORT",
     )
     cors_origins: str = Field(
-        default="http://localhost:5173,http://127.0.0.1:5173",
+        default="http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173",
         validation_alias="C4_CORS_ORIGINS",
     )
 
