@@ -941,18 +941,56 @@ export default function App() {
               onAddProduct={handleAddProduct}
               onUpdateProduct={handleUpdateProduct}
               onDeleteProduct={handleDeleteProduct}
-              onImportProducts={(newProducts) => {
-                const map = new Map<string, Product>();
-                products.forEach((p) => map.set(p.code, p));
-                newProducts.forEach((p) => map.set(p.code, p));
-                const merged = Array.from(map.values());
-                setProducts(merged);
-                showNotification(`${newProducts.length} produto(s) importado(s) na Base de Dados!`, 'success');
+              onImportProducts={async (newProducts) => {
+                try {
+                  let imported = 0;
+                  for (const product of newProducts) {
+                    const existing = products.find((item) => item.code === product.code);
+                    if (existing?.id) {
+                      await updateProduct(existing.id, {
+                        code: product.code,
+                        name: product.name,
+                        category: product.category || 'Geral',
+                        min_stock: product.minStock || 0,
+                      });
+                    } else {
+                      await createProduct({
+                        code: product.code,
+                        name: product.name,
+                        category: product.category || 'Geral',
+                        min_stock: product.minStock || 0,
+                      });
+                    }
+                    imported += 1;
+                  }
+                  const refreshed = await listProducts();
+                  setProducts(refreshed.map((item) => ({
+                    id: item.id,
+                    code: item.code,
+                    name: item.name,
+                    category: item.category || 'Geral',
+                    minStock: item.min_stock,
+                  })));
+                  showNotification(`${imported} produto(s) processado(s) na Base de Dados!`, 'success');
+                } catch (error) {
+                  console.error('Erro ao importar produtos:', error);
+                  showNotification(error instanceof Error ? error.message : 'Não foi possível importar a base de produtos.', 'info');
+                  throw error;
+                }
               }}
-              onResetProducts={() => {
-                setProducts([]);
-                localStorage.removeItem('fast_stock_products');
-                showNotification('Base de Dados de produtos limpa com sucesso!', 'info');
+              onResetProducts={async () => {
+                try {
+                  const activeProducts = await listProducts();
+                  for (const product of activeProducts) {
+                    await deactivateProduct(product.id);
+                  }
+                  setProducts([]);
+                  showNotification('Base de Dados de produtos limpa com sucesso!', 'info');
+                } catch (error) {
+                  console.error('Erro ao limpar produtos:', error);
+                  showNotification(error instanceof Error ? error.message : 'Não foi possível limpar a base de produtos.', 'info');
+                  throw error;
+                }
               }}
               onNotify={showNotification}
               onUpdateSettings={handleUpdateSettings}
