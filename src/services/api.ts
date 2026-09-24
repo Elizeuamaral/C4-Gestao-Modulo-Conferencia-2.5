@@ -1,4 +1,5 @@
-const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+const DEFAULT_API_BASE_URL = `${window.location.protocol}//${window.location.hostname}:8000`;
+const API_BASE_URL = (import.meta.env.VITE_API_URL || DEFAULT_API_BASE_URL).replace(/\/$/, '');
 
 export interface ApiProduct {
   id: string;
@@ -30,7 +31,11 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const body = await response.text();
   let data: unknown = null;
   if (body) {
-    try { data = JSON.parse(body); } catch { data = body; }
+    try {
+      data = JSON.parse(body);
+    } catch {
+      data = body;
+    }
   }
 
   if (!response.ok) {
