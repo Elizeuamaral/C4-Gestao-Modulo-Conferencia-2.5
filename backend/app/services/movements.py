@@ -325,7 +325,7 @@ def reverse_movement(
         )
         _validate_quantity(destination, original.quantity)
         _apply_delta(destination, -original.quantity)
-        source_location_id = None
+        source_location_id = destination.location_id
         destination_location_id = None
 
     elif original.type == "SAIDA":
