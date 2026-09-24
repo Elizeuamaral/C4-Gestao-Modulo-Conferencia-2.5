@@ -5,6 +5,10 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
+from backend.app.api.schemas.movement_adjustments import (
+    CorrectMovementRequest,
+    ReverseMovementRequest,
+)
 from backend.app.api.schemas.movements import (
     MovementCreate,
     MovementListResponse,
@@ -14,9 +18,11 @@ from backend.app.db.database import get_db
 from backend.app.services.movements import (
     MovementConflictError,
     MovementValidationError,
+    correct_movement,
     create_movement,
     get_movement,
     list_movements,
+    reverse_movement,
 )
 
 router = APIRouter(prefix="/movements", tags=["movements"])
@@ -88,4 +94,64 @@ def get_movement_endpoint(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Movement not found.",
         )
+    return movement
+
+
+@router.post(
+    "/{movement_id}/reverse",
+    response_model=MovementResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def reverse_movement_endpoint(
+    movement_id: str,
+    payload: ReverseMovementRequest,
+    response: Response,
+    db: Session = Depends(get_db),
+) -> MovementResponse:
+    """Reverse one supported movement without modifying its original record."""
+    try:
+        movement, replayed = reverse_movement(db, movement_id, payload)
+    except MovementConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    except MovementValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+    if replayed:
+        response.status_code = status.HTTP_200_OK
+    return movement
+
+
+@router.post(
+    "/{movement_id}/correct",
+    response_model=MovementResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def correct_movement_endpoint(
+    movement_id: str,
+    payload: CorrectMovementRequest,
+    response: Response,
+    db: Session = Depends(get_db),
+) -> MovementResponse:
+    """Correct one supported movement without modifying its original record."""
+    try:
+        movement, replayed = correct_movement(db, movement_id, payload)
+    except MovementConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    except MovementValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+    if replayed:
+        response.status_code = status.HTTP_200_OK
     return movement
