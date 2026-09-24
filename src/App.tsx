@@ -20,6 +20,7 @@ import InventoryScreen from './components/InventoryScreen';
 import SettingsScreen from './components/SettingsScreen';
 import { loadStoredSettings } from './utils/settings';
 import { playSuccessBeep, playErrorBuzzer } from './utils/audio';
+import { createProduct, deactivateProduct, listProducts, updateProduct } from './services/api';
 import {
   ClipboardList,
   Archive,
@@ -95,10 +96,8 @@ export default function App() {
   const [activeScreen, setActiveScreen] = useState<'MOVIMENTACAO' | 'CONSULTA' | 'CONFIGURACAO'>('MOVIMENTACAO');
   const [settings, setSettings] = useState<AppSettings>(() => loadStoredSettings());
 
-  const [products, setProducts] = useState<Product[]>(() => {
-    const saved = localStorage.getItem('fast_stock_products');
-    return saved ? JSON.parse(saved) : INITIAL_PRODUCTS;
-  });
+  const [products, setProducts] = useState<Product[]>([]);
+  const [productsLoading, setProductsLoading] = useState(true);
 
   const [stock, setStock] = useState<StockItem[]>(() => {
     const saved = localStorage.getItem('fast_stock_inventory');
@@ -130,8 +129,31 @@ export default function App() {
   }, [showConfigPasswordModal]);
 
   useEffect(() => {
-    localStorage.setItem('fast_stock_products', JSON.stringify(products));
-  }, [products]);
+    let cancelled = false;
+    setProductsLoading(true);
+    listProducts()
+      .then((items) => {
+        if (!cancelled) {
+          setProducts(items.map((item) => ({
+            id: item.id,
+            code: item.code,
+            name: item.name,
+            category: item.category || 'Geral',
+            minStock: item.min_stock,
+          })));
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          console.error('Erro ao carregar produtos da API:', error);
+          showNotification('Não foi possível carregar os produtos do servidor.', 'info');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setProductsLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('fast_stock_inventory', JSON.stringify(stock));
@@ -224,47 +246,91 @@ export default function App() {
     }
   };
 
-  const handleAddProduct = (newProduct: Product) => {
-    setProducts((prev) => {
-      if (prev.some(p => p.code === newProduct.code)) return prev;
-      return [newProduct, ...prev];
-    });
-    showNotification(`Produto "${newProduct.name}" cadastrado no banco de dados!`, 'success');
+  const handleAddProduct = async (newProduct: Product) => {
+    try {
+      const created = await createProduct({
+        code: newProduct.code,
+        name: newProduct.name,
+        category: newProduct.category || 'Geral',
+        min_stock: newProduct.minStock || 0,
+      });
+      setProducts((prev) => [
+        {
+          id: created.id,
+          code: created.code,
+          name: created.name,
+          category: created.category || 'Geral',
+          minStock: created.min_stock,
+        },
+        ...prev,
+      ]);
+      showNotification(`Produto "${created.name}" cadastrado no banco de dados!`, 'success');
+    } catch (error) {
+      console.error('Erro ao cadastrar produto:', error);
+      showNotification(error instanceof Error ? error.message : 'Não foi possível cadastrar o produto.', 'info');
+      throw error;
+    }
   };
 
-  const handleUpdateProduct = (updatedProduct: Product, oldCode?: string) => {
+  const handleUpdateProduct = async (updatedProduct: Product, oldCode?: string) => {
+    if (!updatedProduct.id) {
+      showNotification('Produto sem ID do backend. Recarregue a base antes de editar.', 'info');
+      return;
+    }
     const targetCode = oldCode || updatedProduct.code;
-    setProducts((prev) =>
-      prev.map((p) => (p.code === targetCode ? updatedProduct : p))
-    );
-    setStock((prev) =>
-      prev.map((item) => {
-        if (item.productCode === targetCode) {
-          return {
-            ...item,
-            productCode: updatedProduct.code,
-            productName: updatedProduct.name
-          };
-        }
-        return item;
-      })
-    );
-    setMovements((prev) =>
-      prev.map((mov) => {
-        if (mov.productCode === targetCode) {
-          return {
-            ...mov,
-            productCode: updatedProduct.code,
-            productName: updatedProduct.name
-          };
-        }
-        return mov;
-      })
-    );
+    try {
+      const updated = await updateProduct(updatedProduct.id, {
+        code: updatedProduct.code,
+        name: updatedProduct.name,
+        category: updatedProduct.category || 'Geral',
+        min_stock: updatedProduct.minStock || 0,
+      });
+      setProducts((prev) =>
+        prev.map((p) => (p.id === updated.id ? {
+          id: updated.id,
+          code: updated.code,
+          name: updated.name,
+          category: updated.category || 'Geral',
+          minStock: updated.min_stock,
+        } : p))
+      );
+      setStock((prev) =>
+        prev.map((item) => item.productCode === targetCode ? {
+          ...item,
+          productCode: updated.code,
+          productName: updated.name
+        } : item)
+      );
+      setMovements((prev) =>
+        prev.map((mov) => mov.productCode === targetCode ? {
+          ...mov,
+          productCode: updated.code,
+          productName: updated.name
+        } : mov)
+      );
+      showNotification(`Produto "${updated.name}" atualizado com sucesso!`, 'success');
+    } catch (error) {
+      console.error('Erro ao atualizar produto:', error);
+      showNotification(error instanceof Error ? error.message : 'Não foi possível atualizar o produto.', 'info');
+      throw error;
+    }
   };
 
-  const handleDeleteProduct = (productCode: string) => {
-    setProducts((prev) => prev.filter((p) => p.code !== productCode));
+  const handleDeleteProduct = async (productCode: string) => {
+    const product = products.find((item) => item.code === productCode);
+    if (!product?.id) {
+      showNotification('Produto sem ID do backend. Recarregue a base antes de excluir.', 'info');
+      return;
+    }
+    try {
+      await deactivateProduct(product.id);
+      setProducts((prev) => prev.filter((p) => p.id !== product.id));
+      showNotification(`Produto "${product.name}" desativado com sucesso.`, 'success');
+    } catch (error) {
+      console.error('Erro ao desativar produto:', error);
+      showNotification(error instanceof Error ? error.message : 'Não foi possível desativar o produto.', 'info');
+      throw error;
+    }
   };
 
   const handleImportData = (
