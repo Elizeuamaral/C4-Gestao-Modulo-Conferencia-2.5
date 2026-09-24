@@ -306,6 +306,14 @@ def reverse_movement(
     if already_reversed is not None:
         raise MovementConflictError("This movement has already been reversed.")
 
+    already_corrected = db.scalar(
+        select(Movement.id).where(Movement.correction_of_id == original.id)
+    )
+    if already_corrected is not None:
+        raise MovementConflictError(
+            "A movement that has already been corrected cannot be reversed."
+        )
+
     _validate_checker(db, values.get("checker_id"))
 
     source = None
@@ -461,6 +469,14 @@ def correct_movement(
     )
     if already_corrected is not None:
         raise MovementConflictError("This movement has already been corrected.")
+
+    already_reversed = db.scalar(
+        select(Movement.id).where(Movement.reversal_of_id == original.id)
+    )
+    if already_reversed is not None:
+        raise MovementConflictError(
+            "A movement that has already been reversed cannot be corrected."
+        )
 
     _validate_checker(db, values.get("checker_id"))
 
