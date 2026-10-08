@@ -50,11 +50,15 @@ export default function SettingsScreen({
   onDeleteProduct,
   onImportProducts,
   onResetProducts,
+  onResetStock,
+  onResetAll,
+  onImportStock,
   onNotify,
   onUpdateSettings
 }: SettingsScreenProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const stockFileInputRef = useRef<HTMLInputElement>(null);
 
   // Modal: Add / Edit Product
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
@@ -66,8 +70,10 @@ export default function SettingsScreen({
   // Modal: Delete confirmation
   const [productToDelete, setProductToDelete] = useState<Product | null>(null);
 
-  // Modal: Clear Database confirmation
+  // Modais de limpeza
   const [isConfirmResetModalOpen, setIsConfirmResetModalOpen] = useState(false);
+  const [isConfirmClearStockModalOpen, setIsConfirmClearStockModalOpen] = useState(false);
+  const [isConfirmClearAllModalOpen, setIsConfirmClearAllModalOpen] = useState(false);
 
   // Modal: Change Password
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
