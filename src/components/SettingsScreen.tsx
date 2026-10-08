@@ -1035,8 +1035,9 @@ export default function SettingsScreen({
               </button>
               <button
                 type="button"
-                onClick={() => {
+                onClick={async () => {
                   setIsConfirmResetModalOpen(false);
+                  await onResetProducts();
                   onResetAll?.();
                 }}
                 className="bg-rose-600 hover:bg-rose-500 text-white px-5 py-2.5 rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-1.5 cursor-pointer"
