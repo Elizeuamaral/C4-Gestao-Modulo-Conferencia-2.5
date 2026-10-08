@@ -7,6 +7,7 @@ import React, { useState } from 'react';
 import * as XLSX from 'xlsx';
 import { Product, StockItem, Movement, AppSettings } from '../types';
 import { formatDateDisplay, DATABASE_EXPORT_HEADERS } from '../utils/stockTemplate';
+import { playSuccessBeep } from '../utils/audio';
 import { 
   Search, 
   Archive, 
@@ -38,6 +39,7 @@ interface InventoryScreenProps {
     destination: string;
     quantity: number;
     expirationDate: string;
+    noExpirationDate?: boolean;
   }) => void;
   onUpdateStockItem?: (
     updatedItem: StockItem,
