@@ -639,6 +639,17 @@ export default function SettingsScreen({
 
             <button
               type="button"
+              onClick={() => setIsConfirmClearStockModalOpen(true)}
+              className="border border-orange-200 text-orange-600 hover:bg-orange-50 px-3 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+              title="Limpar os itens do estoque"
+              id="btn-reset-stock"
+            >
+              <Trash2 className="h-4 w-4" />
+              <span>Limpar Estoque</span>
+            </button>
+
+            <button
+              type="button"
               onClick={() => setIsConfirmResetModalOpen(true)}
               className="border border-rose-200 text-rose-600 hover:bg-rose-50 px-3 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer"
               title="Apagar todos os produtos cadastrados e começar base limpa"
@@ -1035,6 +1046,19 @@ export default function SettingsScreen({
                 <Trash2 className="h-4 w-4" />
                 <span>Sim, Excluir Base</span>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isConfirmClearStockModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4" onClick={() => setIsConfirmClearStockModalOpen(false)}>
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-bold text-base text-slate-900">Limpar Estoque</h3>
+            <p className="text-sm text-slate-600">Todos os itens do estoque serão removidos. A base de produtos e o histórico serão preservados.</p>
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setIsConfirmClearStockModalOpen(false)} className="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100">Cancelar</button>
+              <button type="button" onClick={() => { setIsConfirmClearStockModalOpen(false); onResetStock?.(); }} className="bg-orange-600 text-white px-5 py-2.5 rounded-xl text-xs font-bold">Sim, Limpar Estoque</button>
             </div>
           </div>
         </div>
