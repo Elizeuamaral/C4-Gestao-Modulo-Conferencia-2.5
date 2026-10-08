@@ -35,8 +35,8 @@ interface SettingsScreenProps {
   onDeleteProduct: (productCode: string) => void;
   onImportProducts: (products: Product[]) => void;
   onResetProducts: () => void;
-  onClearStock?: () => void;
-  onClearDatabase?: () => void;
+  onResetStock?: () => void;
+  onResetAll?: () => void;
   onImportStock?: (stockItems: StockItem[]) => void;
   onNotify: (message: string, type: 'success' | 'info') => void;
   onUpdateSettings?: (newSettings: AppSettings) => void;
