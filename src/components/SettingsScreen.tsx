@@ -5,7 +5,7 @@
 
 import React, { useState, useRef } from 'react';
 import * as XLSX from 'xlsx';
-import { Product, AppSettings } from '../types';
+import { Product, StockItem, AppSettings } from '../types';
 import { playSuccessBeep, playErrorBuzzer } from '../utils/audio';
 import {
   Database,
@@ -35,6 +35,9 @@ interface SettingsScreenProps {
   onDeleteProduct: (productCode: string) => void;
   onImportProducts: (products: Product[]) => void;
   onResetProducts: () => void;
+  onClearStock?: () => void;
+  onClearDatabase?: () => void;
+  onImportStock?: (stockItems: StockItem[]) => void;
   onNotify: (message: string, type: 'success' | 'info') => void;
   onUpdateSettings?: (newSettings: AppSettings) => void;
 }
