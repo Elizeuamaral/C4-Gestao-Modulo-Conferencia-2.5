@@ -652,11 +652,11 @@ export default function SettingsScreen({
               type="button"
               onClick={() => setIsConfirmResetModalOpen(true)}
               className="border border-rose-200 text-rose-600 hover:bg-rose-50 px-3 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer"
-              title="Apagar todos os produtos cadastrados e começar base limpa"
+              title="Limpar produtos, estoque e histórico de movimentações"
               id="btn-reset-database"
             >
               <Trash2 className="h-4 w-4" />
-              <span>Limpar Base</span>
+              <span>Limpar Base de Dados</span>
             </button>
           </div>
         </div>
@@ -1021,7 +1021,7 @@ export default function SettingsScreen({
                 Deseja excluir a base de dados mesmo?
               </p>
               <p className="text-xs text-slate-600 leading-relaxed">
-                Esta ação irá apagar todos os produtos cadastrados na Base de Dados.
+                Esta ação irá apagar produtos, estoque e histórico de movimentações locais.
               </p>
             </div>
 
@@ -1038,13 +1038,13 @@ export default function SettingsScreen({
                 type="button"
                 onClick={() => {
                   setIsConfirmResetModalOpen(false);
-                  onResetProducts();
+                  onResetAll?.();
                 }}
                 className="bg-rose-600 hover:bg-rose-500 text-white px-5 py-2.5 rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-1.5 cursor-pointer"
                 id="btn-confirm-reset-database"
               >
                 <Trash2 className="h-4 w-4" />
-                <span>Sim, Excluir Base</span>
+                <span>Sim, Limpar Base de Dados</span>
               </button>
             </div>
           </div>
