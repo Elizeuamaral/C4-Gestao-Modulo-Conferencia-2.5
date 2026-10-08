@@ -21,7 +21,10 @@ import {
   AlertCircle,
   Filter,
   ChevronDown,
-  Trash2
+  Trash2,
+  Lock,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 
 interface InventoryScreenProps {
@@ -66,6 +69,14 @@ export default function InventoryScreen({
   const [transferDestination, setTransferDestination] = useState('ESTOQUE');
   const [transferQuantity, setTransferQuantity] = useState(1);
   const [transferExpirationDate, setTransferExpirationDate] = useState('');
+  const [transferNoExpirationDate, setTransferNoExpirationDate] = useState(false);
+
+  // Ações administrativas da consulta de estoque
+  const [adminActionsUnlocked, setAdminActionsUnlocked] = useState(false);
+  const [showAdminActionsPasswordModal, setShowAdminActionsPasswordModal] = useState(false);
+  const [adminActionsPasswordInput, setAdminActionsPasswordInput] = useState('');
+  const [adminActionsPasswordError, setAdminActionsPasswordError] = useState<string | null>(null);
+  const [showAdminActionsPasswordText, setShowAdminActionsPasswordText] = useState(false);
 
   // Edit stock item modal
   const [editingItem, setEditingItem] = useState<StockItem | null>(null);
@@ -86,15 +97,16 @@ export default function InventoryScreen({
     setSelectedTransferItem(item);
     setTransferDestination('ESTOQUE');
     setTransferQuantity(Math.min(1, item.quantity || 1));
-    setTransferExpirationDate(item.expirationDate || '');
+    setTransferNoExpirationDate(Boolean(item.noExpirationDate));
+    setTransferExpirationDate(item.noExpirationDate ? '' : (item.expirationDate || ''));
   };
 
   const confirmTransfer = () => {
     if (!selectedTransferItem || !onStockTransfer) return;
     const quantity = Math.max(1, Math.min(Number(transferQuantity) || 1, selectedTransferItem.quantity));
 
-    if (!transferExpirationDate) {
-      window.alert('Informe a data de vencimento da movimentação para registrar a saída.');
+    if (!transferNoExpirationDate && !transferExpirationDate) {
+      window.alert('Informe a data de vencimento ou marque "Sem vencimento".');
       return;
     }
 
@@ -102,12 +114,14 @@ export default function InventoryScreen({
       itemId: selectedTransferItem.id,
       destination: transferDestination,
       quantity,
-      expirationDate: transferExpirationDate,
+      expirationDate: transferNoExpirationDate ? '' : transferExpirationDate,
+      noExpirationDate: transferNoExpirationDate,
     });
     setSelectedTransferItem(null);
     setTransferDestination('ESTOQUE');
     setTransferQuantity(1);
     setTransferExpirationDate('');
+    setTransferNoExpirationDate(false);
   };
 
   const openEditModal = (item: StockItem) => {
@@ -166,6 +180,27 @@ export default function InventoryScreen({
     );
 
     setEditingItem(null);
+  };
+
+  const unlockAdminActions = () => {
+    const configuredPassword = settings?.adminPassword || '';
+    if (!configuredPassword || adminActionsPasswordInput !== configuredPassword) {
+      setAdminActionsPasswordError('Senha administrativa incorreta. Tente novamente.');
+      return;
+    }
+
+    playSuccessBeep();
+    setAdminActionsUnlocked(true);
+    setShowAdminActionsPasswordModal(false);
+    setAdminActionsPasswordInput('');
+    setAdminActionsPasswordError(null);
+    setShowAdminActionsPasswordText(false);
+  };
+
+  const lockAdminActions = () => {
+    setAdminActionsUnlocked(false);
+    setAdminActionsPasswordInput('');
+    setAdminActionsPasswordError(null);
   };
 
   const getExpirationStatusKey = (item: Pick<StockItem, 'expirationDate' | 'noExpirationDate'>) => {
@@ -459,7 +494,35 @@ export default function InventoryScreen({
                       <th className="py-3 px-3 font-semibold">Método / Origem</th>
                       <th className="py-3 px-3 font-semibold">Situação</th>
                       <th className="py-3 px-4 font-semibold text-right">Qtd</th>
-                      <th className="py-3 px-3 font-semibold text-center">Ações</th>
+                      <th className="py-3 px-3 font-semibold text-center">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <span>Ações</span>
+                          {adminActionsUnlocked ? (
+                            <button
+                              type="button"
+                              onClick={lockAdminActions}
+                              className="p-1 text-emerald-600 hover:bg-emerald-50 rounded-md transition"
+                              title="Bloquear ações administrativas"
+                            >
+                              <Lock className="h-3.5 w-3.5" />
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAdminActionsPasswordInput('');
+                                setAdminActionsPasswordError(null);
+                                setShowAdminActionsPasswordText(false);
+                                setShowAdminActionsPasswordModal(true);
+                              }}
+                              className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition"
+                              title="Liberar ações com senha de administrador"
+                            >
+                              <Lock className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-slate-700 text-sm">
@@ -541,26 +604,29 @@ export default function InventoryScreen({
                             <div className="flex items-center justify-center gap-1">
                               <button
                                 type="button"
+                                disabled={!adminActionsUnlocked}
                                 onClick={() => openEditModal(item)}
-                                className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition"
-                                title="Alterar dados do produto no estoque (Auditoria / Edição)"
+                                className={`p-1.5 rounded-lg transition ${adminActionsUnlocked ? 'text-indigo-600 hover:bg-indigo-50 cursor-pointer' : 'text-slate-300 cursor-not-allowed'}`}
+                                title={adminActionsUnlocked ? 'Alterar dados do produto no estoque (Auditoria / Edição)' : 'Ação bloqueada. Libere com a senha do administrador.'}
                               >
                                 <Edit3 className="h-4 w-4" />
                               </button>
                               <button
                                 type="button"
+                                disabled={!adminActionsUnlocked}
                                 onClick={() => openTransferModal(item)}
-                                className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition cursor-pointer"
-                                title="Movimentar ou transferir item"
+                                className={`p-1.5 rounded-lg transition ${adminActionsUnlocked ? 'text-slate-500 hover:text-slate-800 hover:bg-slate-100 cursor-pointer' : 'text-slate-300 cursor-not-allowed'}`}
+                                title={adminActionsUnlocked ? 'Movimentar ou transferir item' : 'Ação bloqueada. Libere com a senha do administrador.'}
                               >
                                 <ArrowRightLeft className="h-4 w-4" />
                               </button>
                               {onDeleteStockItem && (
                                 <button
                                   type="button"
+                                  disabled={!adminActionsUnlocked}
                                   onClick={() => setItemToDelete(item)}
-                                  className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg transition cursor-pointer"
-                                  title="Remover item do estoque"
+                                  className={`p-1.5 rounded-lg transition ${adminActionsUnlocked ? 'text-rose-500 hover:bg-rose-50 cursor-pointer' : 'text-slate-300 cursor-not-allowed'}`}
+                                  title={adminActionsUnlocked ? 'Remover item do estoque' : 'Ação bloqueada. Libere com a senha do administrador.'}
                                 >
                                   <Trash2 className="h-4 w-4" />
                                 </button>
@@ -853,12 +919,28 @@ export default function InventoryScreen({
               </div>
 
               <div className="space-y-1">
-                <label className="block text-xs font-semibold text-slate-600">Data de vencimento movimentada</label>
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-semibold text-slate-600">Data de vencimento movimentada</label>
+                  <label className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={transferNoExpirationDate}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setTransferNoExpirationDate(checked);
+                        if (checked) setTransferExpirationDate('');
+                      }}
+                      className="rounded border-slate-300 text-indigo-600 focus:ring-0"
+                    />
+                    Sem vencimento
+                  </label>
+                </div>
                 <input
                   type="date"
+                  disabled={transferNoExpirationDate}
                   value={transferExpirationDate}
                   onChange={(e) => setTransferExpirationDate(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-800 focus:outline-none focus:border-indigo-500"
+                  className={`w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium focus:outline-none focus:border-indigo-500 ${transferNoExpirationDate ? 'bg-slate-100 text-slate-400' : 'bg-slate-50 text-slate-800'}`}
                 />
               </div>
             </div>
@@ -879,6 +961,104 @@ export default function InventoryScreen({
                 Confirmar
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Senha para liberar ações administrativas */}
+      {showAdminActionsPasswordModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-150"
+          onClick={() => setShowAdminActionsPasswordModal(false)}
+        >
+          <div
+            className="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl border border-slate-100 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5 text-slate-800">
+                <div className="p-2 rounded-xl bg-indigo-50 text-indigo-600">
+                  <Lock className="h-4 w-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-slate-900">Ações Administrativas</h3>
+                  <p className="text-[11px] text-slate-400">Libere Editar, Movimentar e Remover</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAdminActionsPasswordModal(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg transition"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Digite a mesma senha de administrador usada para acessar a aba <strong>Banco de Dados</strong>.
+            </p>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                unlockAdminActions();
+              }}
+              className="space-y-3.5"
+            >
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Senha Administrativa
+                </label>
+                <div className="relative">
+                  <input
+                    type={showAdminActionsPasswordText ? 'text' : 'password'}
+                    value={adminActionsPasswordInput}
+                    onChange={(e) => {
+                      setAdminActionsPasswordInput(e.target.value);
+                      if (adminActionsPasswordError) setAdminActionsPasswordError(null);
+                    }}
+                    placeholder="Digite a senha..."
+                    autoFocus
+                    className="w-full px-3.5 py-2.5 pr-10 text-sm rounded-xl border border-slate-200 bg-slate-50 focus:bg-white text-slate-800 focus:outline-none focus:border-indigo-500 font-medium"
+                    id="inventory-admin-actions-password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowAdminActionsPasswordText(!showAdminActionsPasswordText)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    title={showAdminActionsPasswordText ? 'Ocultar senha' : 'Ver senha'}
+                  >
+                    {showAdminActionsPasswordText ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                  </button>
+                </div>
+                {adminActionsPasswordError && (
+                  <p className="text-xs text-rose-600 font-semibold pt-1">
+                    {adminActionsPasswordError}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowAdminActionsPasswordModal(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2 rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-1.5"
+                >
+                  <Lock className="h-3.5 w-3.5" />
+                  Liberar Ações
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
