@@ -59,8 +59,25 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 export async function listProducts(): Promise<ApiProduct[]> {
-  const response = await request<ProductListResponse>('/products?active=true&limit=200&offset=0');
-  return response.items;
+  const pageSize = 200;
+  const products: ApiProduct[] = [];
+  let offset = 0;
+
+  while (true) {
+    const response = await request<ProductListResponse>(
+      `/products?active=true&limit=${pageSize}&offset=${offset}`
+    );
+
+    products.push(...response.items);
+
+    if (products.length >= response.total || response.items.length < pageSize) {
+      break;
+    }
+
+    offset += pageSize;
+  }
+
+  return products;
 }
 
 export function createProduct(payload: {
