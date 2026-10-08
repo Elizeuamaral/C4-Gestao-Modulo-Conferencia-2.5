@@ -20,13 +20,22 @@ interface ProductListResponse {
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(options.headers || {}),
-    },
-  });
+  let response: Response;
+
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(options.headers || {}),
+      },
+    });
+  } catch (error) {
+    console.error(`Falha de conexão com a API: ${API_BASE_URL}${path}`, error);
+    throw new Error(
+      `Não foi possível conectar ao servidor C4 Gestão em ${API_BASE_URL}. Verifique se a API está em execução e acessível pela rede.`
+    );
+  }
 
   const body = await response.text();
   let data: unknown = null;
