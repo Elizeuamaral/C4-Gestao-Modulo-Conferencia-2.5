@@ -480,11 +480,13 @@ export default function App() {
     destination,
     quantity,
     expirationDate,
+    noExpirationDate = false,
   }: {
     itemId: string;
     destination: string;
     quantity: number;
     expirationDate: string;
+    noExpirationDate?: boolean;
   }) => {
     const selectedItem = stock.find((item) => item.id === itemId);
     if (!selectedItem) return;
@@ -538,8 +540,8 @@ export default function App() {
           unit: selectedItem.unit,
           lot: selectedItem.lot,
           manufacturingDate: selectedItem.manufacturingDate,
-          expirationDate: expirationDate || selectedItem.expirationDate,
-          noExpirationDate: !expirationDate,
+          expirationDate: noExpirationDate ? undefined : (expirationDate || selectedItem.expirationDate),
+          noExpirationDate,
           address: 'Baixado',
           supplier: selectedItem.supplier,
           invoiceNumber: selectedItem.invoiceNumber,
@@ -564,8 +566,8 @@ export default function App() {
           return {
             ...item,
             address: destination,
-            expirationDate: expirationDate || item.expirationDate,
-            noExpirationDate: !expirationDate,
+            expirationDate: noExpirationDate ? undefined : (expirationDate || item.expirationDate),
+            noExpirationDate,
             updatedAt: today,
             updateReason: `Transferência para ${destination}`,
           };
@@ -583,8 +585,8 @@ export default function App() {
           quantity: safeQuantity,
           receivedQuantity: safeQuantity,
           address: destination,
-          expirationDate: expirationDate || selectedItem.expirationDate,
-          noExpirationDate: !expirationDate,
+          expirationDate: noExpirationDate ? undefined : (expirationDate || selectedItem.expirationDate),
+          noExpirationDate,
           updatedAt: today,
           updateReason: `Transferido de ${selectedItem.address}`,
         };
