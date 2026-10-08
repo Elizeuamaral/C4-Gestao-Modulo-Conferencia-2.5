@@ -993,25 +993,54 @@ export default function App() {
               onImportProducts={async (newProducts) => {
                 try {
                   let imported = 0;
+                  const latestProducts = await listProducts();
+                  const productsByCode = new Map(
+                    latestProducts.map((item) => [item.code.trim(), {
+                      id: item.id,
+                      code: item.code,
+                      name: item.name,
+                      category: item.category || 'Geral',
+                      minStock: item.min_stock,
+                    }])
+                  );
+
                   for (const product of newProducts) {
-                    const existing = products.find((item) => item.code === product.code);
+                    const code = product.code.trim();
+                    if (!code) continue;
+
+                    const existing = productsByCode.get(code);
                     if (existing?.id) {
-                      await updateProduct(existing.id, {
-                        code: product.code,
-                        name: product.name,
-                        category: product.category || 'Geral',
+                      const updated = await updateProduct(existing.id, {
+                        code,
+                        name: product.name.trim(),
+                        category: product.category?.trim() || 'Geral',
                         min_stock: product.minStock || 0,
                       });
+                      productsByCode.set(code, {
+                        id: updated.id,
+                        code: updated.code,
+                        name: updated.name,
+                        category: updated.category || 'Geral',
+                        minStock: updated.min_stock,
+                      });
                     } else {
-                      await createProduct({
-                        code: product.code,
-                        name: product.name,
-                        category: product.category || 'Geral',
+                      const created = await createProduct({
+                        code,
+                        name: product.name.trim(),
+                        category: product.category?.trim() || 'Geral',
                         min_stock: product.minStock || 0,
+                      });
+                      productsByCode.set(code, {
+                        id: created.id,
+                        code: created.code,
+                        name: created.name,
+                        category: created.category || 'Geral',
+                        minStock: created.min_stock,
                       });
                     }
                     imported += 1;
                   }
+
                   const refreshed = await listProducts();
                   setProducts(refreshed.map((item) => ({
                     id: item.id,
