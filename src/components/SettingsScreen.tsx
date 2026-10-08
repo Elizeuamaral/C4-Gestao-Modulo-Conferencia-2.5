@@ -73,7 +73,6 @@ export default function SettingsScreen({
   // Modais de limpeza
   const [isConfirmResetModalOpen, setIsConfirmResetModalOpen] = useState(false);
   const [isConfirmClearStockModalOpen, setIsConfirmClearStockModalOpen] = useState(false);
-  const [isConfirmClearAllModalOpen, setIsConfirmClearAllModalOpen] = useState(false);
 
   // Modal: Change Password
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
