@@ -753,6 +753,13 @@ export default function App() {
     }
   };
 
+  const handleResetStock = () => {
+    localStorage.removeItem('fast_stock_inventory');
+    setStock([]);
+    playSuccessBeep(true);
+    showNotification('Estoque limpo com sucesso!', 'info');
+  };
+
   const handleResetDatabase = () => {
     localStorage.removeItem('fast_stock_products');
     localStorage.removeItem('fast_stock_inventory');
@@ -762,6 +769,46 @@ export default function App() {
     setMovements([]);
     playSuccessBeep(true);
     showNotification('Base de dados limpa com sucesso!', 'info');
+  };
+
+  const handleImportStock = async (importedStock: StockItem[]) => {
+    setStock(importedStock.map(normalizeStockItem));
+
+    const existingByCode = new Set(products.map((product) => product.code));
+    const missingProducts = importedStock
+      .filter((item) => !existingByCode.has(item.productCode))
+      .map((item) => ({
+        code: item.productCode,
+        name: item.productName,
+        category: 'Geral',
+        minStock: 0,
+      }))
+      .filter((product, index, list) => list.findIndex((item) => item.code === product.code) === index);
+
+    for (const product of missingProducts) {
+      try {
+        await createProduct({
+          code: product.code,
+          name: product.name,
+          category: product.category,
+          min_stock: 0,
+        });
+      } catch (error) {
+        console.error('Erro ao cadastrar produto durante importação do estoque:', error);
+      }
+    }
+
+    const refreshed = await listProducts();
+    setProducts(refreshed.map((item) => ({
+      id: item.id,
+      code: item.code,
+      name: item.name,
+      category: item.category || 'Geral',
+      minStock: item.min_stock,
+    })));
+
+    localStorage.setItem('fast_stock_inventory', JSON.stringify(importedStock));
+    showNotification(importedStock.length + ' item(ns) de estoque carregado(s).', 'success');
   };
 
   const handleConfirmConfigPassword = (e: React.FormEvent) => {
@@ -980,6 +1027,9 @@ export default function App() {
                   throw error;
                 }
               }}
+              onResetStock={handleResetStock}
+              onResetAll={handleResetDatabase}
+              onImportStock={handleImportStock}
               onResetProducts={async () => {
                 try {
                   const activeProducts = await listProducts();
