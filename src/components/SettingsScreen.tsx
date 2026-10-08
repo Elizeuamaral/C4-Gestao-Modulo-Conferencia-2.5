@@ -395,6 +395,90 @@ export default function SettingsScreen({
     reader.readAsBinaryString(file);
   };
 
+  const handleStockFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const wb = XLSX.read(evt.target?.result, { type: 'binary', cellDates: true });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1, defval: '' });
+        if (!rows.length) { onNotify('O arquivo de estoque está vazio.', 'info'); return; }
+
+        const normalize = (v: unknown) => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+        const aliases: Record<string, string[]> = {
+          code: ['codigo de barra','codigo de barras','codigo','ean','barcode'],
+          name: ['descricao','descricao produto','produto','nome'],
+          quantity: ['quantidade','qtd','estoque','saldo'],
+          unit: ['un. medida','unidade','un','um'],
+          lot: ['lote'],
+          manufacturingDate: ['fabricacao','data fabricacao'],
+          expirationDate: ['vencimento','validade','data validade'],
+          address: ['endereco','local','localizacao']
+        };
+        const header = rows[0] || [];
+        const cols: Record<string, number> = {};
+        Object.entries(aliases).forEach(([key, names]) => {
+          const normalized = header.map(normalize);
+          cols[key] = normalized.findIndex(h => names.some(n => h === normalize(n)));
+        });
+        const hasHeader = cols.code >= 0 || cols.name >= 0 || cols.quantity >= 0 || cols.address >= 0;
+        const start = hasHeader ? 1 : 0;
+        if (!hasHeader) { cols.code=0; cols.name=1; cols.quantity=2; cols.unit=3; cols.lot=4; cols.manufacturingDate=5; cols.expirationDate=6; cols.address=7; }
+
+        const dateToIso = (v: unknown) => {
+          if (v instanceof Date && !Number.isNaN(v.getTime())) return v.toISOString().slice(0,10);
+          const s = String(v ?? '').trim();
+          const m = s.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/);
+          if (m) return m[3]+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[1]).padStart(2,'0');
+          if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+          return undefined;
+        };
+        const imported: StockItem[] = [];
+        for (let i=start; i<rows.length; i++) {
+          const row=rows[i]; if (!row?.length) continue;
+          const code=String(cols.code>=0?row[cols.code]??'':'').trim();
+          const name=String(cols.name>=0?row[cols.name]??'':'').trim();
+          if (!code) continue;
+          const rawQty=cols.quantity>=0?row[cols.quantity]:'';
+          const quantity=rawQty===''||rawQty==null?0:Math.max(0,Number(String(rawQty).replace(',','.'))||0);
+          const rawExp=cols.expirationDate>=0?row[cols.expirationDate]:'';
+          const expText=String(rawExp??'').trim();
+          const noExpirationDate=!expText || ['sem vencimento','sem validade','sem venc'].includes(normalize(expText));
+          const rawUnit=String(cols.unit>=0?row[cols.unit]??'':'').trim().toUpperCase();
+          const unit: StockItem['unit']=['FD','UN','CX','PCT'].includes(rawUnit)?rawUnit as StockItem['unit']:'UN';
+          imported.push({
+            id:'import-'+Date.now()+'-'+i,
+            productCode:code.toUpperCase(),
+            productName:name||code,
+            quantity,
+            receivedQuantity:quantity,
+            unit,
+            lot:String(cols.lot>=0?row[cols.lot]??'':'').trim()||'S/LOTE',
+            manufacturingDate:dateToIso(cols.manufacturingDate>=0?row[cols.manufacturingDate]:undefined),
+            expirationDate:noExpirationDate?undefined:dateToIso(rawExp),
+            noExpirationDate,
+            address:String(cols.address>=0?row[cols.address]??'':'').trim()||'ESTOQUE',
+            receivedDate:new Date().toISOString().slice(0,10),
+            entryMethod:'Importação'
+          });
+        }
+        if (!imported.length) { onNotify('Nenhum item de estoque válido encontrado.', 'info'); return; }
+        onImportStock?.(imported);
+        playSuccessBeep();
+        onNotify(imported.length+' item(ns) de estoque importado(s).', 'success');
+      } catch (error) {
+        console.error('Erro ao importar estoque:', error);
+        onNotify('Não foi possível processar a planilha de estoque.', 'info');
+        playErrorBuzzer();
+      } finally {
+        if (stockFileInputRef.current) stockFileInputRef.current.value='';
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
   // Open password modal
   const handleOpenPasswordModal = () => {
     setCurrentPasswordInput('');
@@ -464,7 +548,8 @@ export default function SettingsScreen({
 
   return (
     <div className="max-w-7xl mx-auto px-4 space-y-6 pb-12 animate-in fade-in duration-200 font-sans">
-      {/* Hidden File Input for Excel Import */}
+      {/* Hidden File Inputs for Excel Import */}
+      <input ref={stockFileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleStockFileSelected} />
       <input
         ref={fileInputRef}
         type="file"
