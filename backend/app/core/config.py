@@ -30,7 +30,7 @@ class Settings(BaseSettings):
         validation_alias="C4_CORS_ORIGINS",
     )
     cors_origin_regex: str = Field(
-        default=r"^https?://(?:localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}):(3000|5173)$",
+        default=r"^https?://(?:(?:localhost|127\.0\.0\.1)|(?:10\.\d{1,3}\.\d{1,3}\.\d{1,3})|(?:172\.(?:1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})|(?:192\.168\.\d{1,3}\.\d{1,3})):(3000|5173)$",
         validation_alias="C4_CORS_ORIGIN_REGEX",
     )
 
