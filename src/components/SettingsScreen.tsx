@@ -606,6 +606,17 @@ export default function SettingsScreen({
 
             <button
               type="button"
+              onClick={() => stockFileInputRef.current?.click()}
+              className="bg-cyan-600 hover:bg-cyan-500 text-white px-3.5 py-2.5 rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-1.5 cursor-pointer"
+              title="Importar estoque por planilha"
+              id="btn-import-stock"
+            >
+              <Upload className="h-4 w-4" />
+              <span>Importar Estoque</span>
+            </button>
+
+            <button
+              type="button"
               onClick={handleExportExcel}
               className="bg-emerald-600 hover:bg-emerald-500 text-white px-3.5 py-2.5 rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-1.5 cursor-pointer"
               title="Exportar planilha Excel (.xlsx) com Código de Barras e Descrição"
