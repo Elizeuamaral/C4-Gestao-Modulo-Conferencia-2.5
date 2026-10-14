@@ -20,7 +20,7 @@ import InventoryScreen from './components/InventoryScreen';
 import SettingsScreen from './components/SettingsScreen';
 import { loadStoredSettings } from './utils/settings';
 import { playSuccessBeep, playErrorBuzzer } from './utils/audio';
-import { createProduct, deactivateProduct, listProducts, updateProduct } from './services/api';
+import { createProduct, deactivateProduct, listAllProducts, listProducts, updateProduct } from './services/api';
 import {
   ClipboardList,
   Archive,
@@ -993,9 +993,9 @@ export default function App() {
               onImportProducts={async (newProducts) => {
                 try {
                   let imported = 0;
-                  const latestProducts = await listProducts();
+                  const latestProducts = await listAllProducts();
                   const productsByCode = new Map(
-                    latestProducts.map((item) => [item.code.trim(), {
+                    latestProducts.map((item) => [item.code.trim().toUpperCase(), {
                       id: item.id,
                       code: item.code,
                       name: item.name,
@@ -1005,7 +1005,7 @@ export default function App() {
                   );
 
                   for (const product of newProducts) {
-                    const code = product.code.trim();
+                    const code = product.code.trim().toUpperCase();
                     if (!code) continue;
 
                     const existing = productsByCode.get(code);
@@ -1015,6 +1015,7 @@ export default function App() {
                         name: product.name.trim(),
                         category: product.category?.trim() || 'Geral',
                         min_stock: product.minStock || 0,
+                        active: true,
                       });
                       productsByCode.set(code, {
                         id: updated.id,
