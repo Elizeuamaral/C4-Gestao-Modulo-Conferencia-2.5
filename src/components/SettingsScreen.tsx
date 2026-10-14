@@ -33,7 +33,7 @@ interface SettingsScreenProps {
   onAddProduct: (product: Product) => void;
   onUpdateProduct: (product: Product, oldCode?: string) => void;
   onDeleteProduct: (productCode: string) => void;
-  onImportProducts: (products: Product[]) => void;
+  onImportProducts: (products: Product[]) => Promise<void> | void;
   onResetProducts: () => void;
   onResetStock?: () => void;
   onResetAll?: () => void;
@@ -236,28 +236,36 @@ export default function SettingsScreen({
       }
     }
 
-    if (editingProduct) {
-      await onUpdateProduct(
-        {
-          ...editingProduct,
+    try {
+      if (editingProduct) {
+        await onUpdateProduct(
+          {
+            ...editingProduct,
+            code: cleanCode,
+            name: cleanName,
+            category: editingProduct.category || 'Geral'
+          },
+          editingProduct.code
+        );
+        onNotify(`Produto "${cleanName}" atualizado com sucesso!`, 'success');
+      } else {
+        await onAddProduct({
           code: cleanCode,
           name: cleanName,
-          category: editingProduct.category || 'Geral'
-        },
-        editingProduct.code
-      );
-      onNotify(`Produto "${cleanName}" atualizado com sucesso!`, 'success');
-    } else {
-      await onAddProduct({
-        code: cleanCode,
-        name: cleanName,
-        category: 'Geral'
-      });
-      onNotify(`Produto "${cleanName}" cadastrado na Base de Dados!`, 'success');
-    }
+          category: 'Geral'
+        });
+        onNotify(`Produto "${cleanName}" cadastrado na Base de Dados!`, 'success');
+      }
 
-    playSuccessBeep();
-    setIsProductModalOpen(false);
+      playSuccessBeep();
+      setIsProductModalOpen(false);
+    } catch (error) {
+      console.error('Erro ao salvar produto na Base de Dados:', error);
+      setProductModalError(
+        error instanceof Error ? error.message : 'Não foi possível salvar o produto. Tente novamente.'
+      );
+      playErrorBuzzer();
+    }
   };
 
   // Confirm delete single product
@@ -296,7 +304,7 @@ export default function SettingsScreen({
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       try {
         const bstr = evt.target?.result;
         const wb = XLSX.read(bstr, { type: 'binary' });
@@ -378,11 +386,16 @@ export default function SettingsScreen({
           return;
         }
 
-        onImportProducts(importedProducts);
+        await onImportProducts(importedProducts);
         playSuccessBeep();
       } catch (err) {
-        console.error('Erro ao ler planilha:', err);
-        onNotify('Erro ao processar arquivo da planilha.', 'info');
+        console.error('Erro ao importar base de produtos:', err);
+        onNotify(
+          err instanceof Error
+            ? `Falha na importação: ${err.message}`
+            : 'Não foi possível importar a base de produtos.',
+          'info'
+        );
         playErrorBuzzer();
       } finally {
         if (fileInputRef.current) {
