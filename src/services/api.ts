@@ -80,6 +80,28 @@ export async function listProducts(): Promise<ApiProduct[]> {
   return products;
 }
 
+export async function listAllProducts(): Promise<ApiProduct[]> {
+  const pageSize = 200;
+  const inactiveProducts: ApiProduct[] = [];
+  let offset = 0;
+
+  while (true) {
+    const response = await request<ProductListResponse>(
+      `/products?active=false&limit=${pageSize}&offset=${offset}`
+    );
+
+    inactiveProducts.push(...response.items);
+
+    if (inactiveProducts.length >= response.total || response.items.length < pageSize) {
+      break;
+    }
+
+    offset += pageSize;
+  }
+
+  return [...await listProducts(), ...inactiveProducts];
+}
+
 export function createProduct(payload: {
   code: string;
   name: string;
@@ -100,7 +122,7 @@ export function createProduct(payload: {
 
 export function updateProduct(
   productId: string,
-  payload: { code?: string; name?: string; category?: string; min_stock?: number },
+  payload: { code?: string; name?: string; category?: string; min_stock?: number; active?: boolean },
 ): Promise<ApiProduct> {
   return request<ApiProduct>(`/products/${productId}`, {
     method: 'PUT',
