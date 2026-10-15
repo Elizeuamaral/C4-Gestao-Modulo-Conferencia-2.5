@@ -1,7 +1,7 @@
 """Login, first-run administrator setup, and user CRUD endpoints."""
 from __future__ import annotations
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -25,7 +25,10 @@ def setup_status(db: Session = Depends(get_db)) -> SetupStatus:
     return SetupStatus(setup_required=db.query(User.id).first() is None)
 
 @router.post("/setup-admin", response_model=LoginResponse, status_code=status.HTTP_201_CREATED)
-def setup_admin(payload: InitialAdminSetup, db: Session = Depends(get_db)) -> LoginResponse:
+def setup_admin(payload: InitialAdminSetup, request: Request, db: Session = Depends(get_db)) -> LoginResponse:
+    # Bootstrap must be performed locally on the server computer, not from another LAN device.
+    if request.client is None or request.client.host not in {"127.0.0.1", "::1", "localhost"}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="A configuração inicial deve ser feita no próprio computador servidor, usando http://localhost:3000.")
     if db.query(User.id).first() is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="O administrador inicial já foi configurado.")
     user = User(full_name=payload.full_name, username=payload.username, password_hash=hash_password(payload.password), role="ADMIN", active=True)
