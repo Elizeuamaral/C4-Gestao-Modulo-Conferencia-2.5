@@ -19,6 +19,8 @@ EXPECTED_TABLES = {
     "movements",
     "app_settings",
     "admin_credentials",
+    "users",
+    "auth_sessions",
 }
 
 
