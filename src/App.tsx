@@ -18,9 +18,10 @@ import {
 import MovementScreen from './components/MovementScreen';
 import InventoryScreen from './components/InventoryScreen';
 import SettingsScreen from './components/SettingsScreen';
+import LoginScreen from './components/LoginScreen';
 import { loadStoredSettings } from './utils/settings';
 import { playSuccessBeep, playErrorBuzzer } from './utils/audio';
-import { createProduct, deactivateProduct, listAllProducts, listProducts, updateProduct } from './services/api';
+import { ApiUser, createProduct, deactivateProduct, getCurrentUser, listAllProducts, listProducts, logoutUser, updateProduct } from './services/api';
 import {
   ClipboardList,
   Archive,
@@ -30,7 +31,8 @@ import {
   Lock,
   Eye,
   EyeOff,
-  X
+  X,
+  LogOut
 } from 'lucide-react';
 
 const APP_VERSION = '2.5.0';
@@ -95,6 +97,9 @@ const normalizeMovement = (movement: Movement) => ({
 export default function App() {
   const [activeScreen, setActiveScreen] = useState<'MOVIMENTACAO' | 'CONSULTA' | 'CONFIGURACAO'>('MOVIMENTACAO');
   const [settings, setSettings] = useState<AppSettings>(() => loadStoredSettings());
+  const [authToken, setAuthToken] = useState<string | null>(() => localStorage.getItem('c4_auth_token'));
+  const [authUser, setAuthUser] = useState<ApiUser | null>(null);
+  const [authLoading, setAuthLoading] = useState<boolean>(() => Boolean(localStorage.getItem('c4_auth_token')));
 
   const [products, setProducts] = useState<Product[]>([]);
   const [productsLoading, setProductsLoading] = useState(true);
@@ -129,6 +134,10 @@ export default function App() {
   }, [showConfigPasswordModal]);
 
   useEffect(() => {
+    if (!authToken) {
+      setProductsLoading(false);
+      return;
+    }
     let cancelled = false;
     setProductsLoading(true);
     listProducts()
@@ -153,7 +162,25 @@ export default function App() {
         if (!cancelled) setProductsLoading(false);
       });
     return () => { cancelled = true; };
-  }, []);
+  }, [authToken]);
+
+  useEffect(() => {
+    if (!authToken) {
+      setAuthUser(null);
+      setAuthLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setAuthLoading(true);
+    getCurrentUser()
+      .then((user) => { if (!cancelled) setAuthUser(user); })
+      .catch(() => {
+        localStorage.removeItem('c4_auth_token');
+        if (!cancelled) { setAuthToken(null); setAuthUser(null); }
+      })
+      .finally(() => { if (!cancelled) setAuthLoading(false); });
+    return () => { cancelled = true; };
+  }, [authToken]);
 
   useEffect(() => {
     localStorage.setItem('fast_stock_inventory', JSON.stringify(stock));
@@ -840,14 +867,36 @@ export default function App() {
     }
 
     if (screen === 'CONFIGURACAO') {
-      setConfigPasswordInput('');
-      setConfigPasswordError(null);
-      setShowPasswordText(false);
-      setShowConfigPasswordModal(true);
+      if (authUser?.role !== 'ADMIN') {
+        showNotification('Somente um administrador pode acessar Configurações.', 'info');
+        return;
+      }
+      setActiveScreen('CONFIGURACAO');
       return;
     }
 
     setActiveScreen(screen);
+  };
+
+  if (authLoading) {
+    return <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white">Validando sessão do C4 Gestão...</div>;
+  }
+
+  if (!authUser || !authToken) {
+    return <LoginScreen onAuthenticated={(token, user) => {
+      localStorage.setItem('c4_auth_token', token);
+      setAuthToken(token);
+      setAuthUser(user);
+      setAuthLoading(false);
+    }} />;
+  }
+
+  const handleLogout = async () => {
+    try { await logoutUser(); } catch (error) { console.warn('Não foi possível encerrar a sessão no servidor:', error); }
+    localStorage.removeItem('c4_auth_token');
+    setAuthToken(null);
+    setAuthUser(null);
+    setActiveScreen('MOVIMENTACAO');
   };
 
   return (
@@ -871,10 +920,11 @@ export default function App() {
                 </span>
               </div>
               <p className="text-xs text-slate-400">
-                Registro e conferência rápida de entradas de mercadorias
+                Registro e conferência rápida de entradas de mercadorias · {authUser.full_name}
               </p>
             </div>
           </div>
+          <button type="button" onClick={handleLogout} className="rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-bold text-slate-200 hover:bg-slate-700 flex items-center gap-2"><LogOut className="h-4 w-4"/>Sair</button>
         </div>
       </header>
 
@@ -951,7 +1001,7 @@ export default function App() {
               }`}
             >
               <Database className="h-4 w-4 shrink-0" />
-              <span>Banco de Dados</span>
+              <span>Configurações</span>
             </button>
           </nav>
         </div>
@@ -985,6 +1035,7 @@ export default function App() {
 
           {activeScreen === 'CONFIGURACAO' && (
             <SettingsScreen
+              currentUser={authUser}
               products={products}
               settings={settings}
               onAddProduct={handleAddProduct}
