@@ -6,6 +6,8 @@
 import React, { useState, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { Product, StockItem, AppSettings } from '../types';
+import { ApiUser } from '../services/api';
+import UserManagement from './UserManagement';
 import { playSuccessBeep, playErrorBuzzer } from '../utils/audio';
 import {
   Database,
@@ -28,6 +30,7 @@ import {
 } from 'lucide-react';
 
 interface SettingsScreenProps {
+  currentUser: ApiUser;
   products: Product[];
   settings: AppSettings;
   onAddProduct: (product: Product) => void;
@@ -43,6 +46,7 @@ interface SettingsScreenProps {
 }
 
 export default function SettingsScreen({
+  currentUser,
   products,
   settings,
   onAddProduct,
@@ -546,7 +550,7 @@ export default function SettingsScreen({
 
     playSuccessBeep();
     setPasswordSuccess('Senha alterada com sucesso!');
-    onNotify('Senha do Banco de Dados alterada com sucesso!', 'success');
+    onNotify('Senha local antiga alterada. Para login, use a senha da conta.', 'info');
 
     setTimeout(() => {
       setIsPasswordModalOpen(false);
@@ -560,6 +564,7 @@ export default function SettingsScreen({
 
   return (
     <div className="max-w-7xl mx-auto px-4 space-y-6 pb-12 animate-in fade-in duration-200 font-sans">
+      <UserManagement currentUser={currentUser} onNotify={onNotify} />
       {/* Hidden File Inputs for Excel Import */}
       <input ref={stockFileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleStockFileSelected} />
       <input
@@ -580,7 +585,7 @@ export default function SettingsScreen({
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-xl font-black text-slate-800 tracking-tight">
-                  Base de Dados — Produtos
+                  Configurações do Sistema — Produtos
                 </h2>
                 <span className="text-[10px] bg-indigo-100 text-indigo-800 font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
                   Módulo Administrativo
@@ -638,16 +643,6 @@ export default function SettingsScreen({
               <span>Exportar Base</span>
             </button>
 
-            <button
-              type="button"
-              onClick={handleOpenPasswordModal}
-              className="bg-amber-500 hover:bg-amber-600 text-white px-3.5 py-2.5 rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-1.5 cursor-pointer"
-              title="Trocar a senha de acesso administrativo ao Banco de Dados"
-              id="btn-change-database-password"
-            >
-              <Key className="h-4 w-4" />
-              <span>Trocar Senha</span>
-            </button>
 
             <button
               type="button"
@@ -1093,7 +1088,7 @@ export default function SettingsScreen({
                   <Lock className="h-5 w-5" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-base text-slate-900">Alterar Senha do Banco de Dados</h3>
+                  <h3 className="font-bold text-base text-slate-900">Alterar senha local antiga</h3>
                   <p className="text-xs text-slate-400">Defina uma nova senha para o acesso administrativo</p>
                 </div>
               </div>
