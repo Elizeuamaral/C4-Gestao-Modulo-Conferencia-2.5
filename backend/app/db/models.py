@@ -350,3 +350,44 @@ class AdminCredential(Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[str] = mapped_column(String(40), nullable=False, default=utc_now_iso)
     updated_at: Mapped[str] = mapped_column(String(40), nullable=False, default=utc_now_iso, onupdate=utc_now_iso)
+
+
+
+class User(Base):
+    """Application account with a role and soft-deactivation support."""
+
+    __tablename__ = "users"
+    __table_args__ = (
+        CheckConstraint("role IN ('ADMIN', 'CONFERENTE')", name="ck_users_role"),
+        CheckConstraint("active IN (0, 1)", name="ck_users_active"),
+        Index("idx_users_active_role", "active", "role"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    full_name: Mapped[str] = mapped_column(String(150), nullable=False)
+    username: Mapped[str] = mapped_column(String(80), nullable=False, unique=True)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str] = mapped_column(String(20), nullable=False, default="CONFERENTE")
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False, default=utc_now_iso)
+    updated_at: Mapped[str] = mapped_column(String(40), nullable=False, default=utc_now_iso, onupdate=utc_now_iso)
+
+
+class AuthSession(Base):
+    """Opaque bearer session; only the token hash is persisted."""
+
+    __tablename__ = "auth_sessions"
+    __table_args__ = (
+        Index("idx_auth_sessions_user", "user_id"),
+        Index("idx_auth_sessions_expiration", "expires_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    user_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    expires_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False, default=utc_now_iso)
