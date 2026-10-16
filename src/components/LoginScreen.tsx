@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { KeyRound, LogIn, ShieldCheck, UserRound } from 'lucide-react';
-import { ApiUser, getSetupStatus, loginUser, setupInitialAdmin } from '../services/api';
+import { ApiUser, getSetupStatus, loginUser, setAuthToken, setupInitialAdmin } from '../services/api';
 
 interface LoginScreenProps {
   onAuthenticated: (token: string, user: ApiUser) => void;
@@ -40,7 +40,7 @@ export default function LoginScreen({ onAuthenticated }: LoginScreenProps) {
       const result = setupRequired
         ? await setupInitialAdmin({ full_name: fullName, username, password })
         : await loginUser(username, password);
-      localStorage.setItem('c4_auth_token', result.access_token);
+      setAuthToken(result.access_token);
       onAuthenticated(result.access_token, result.user);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível entrar no sistema.');

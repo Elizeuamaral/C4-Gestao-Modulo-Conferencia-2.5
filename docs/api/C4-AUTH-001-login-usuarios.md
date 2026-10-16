@@ -24,8 +24,7 @@ o formulário de login com "Not Found".
 ## O que está implementado
 
 - Senhas armazenadas com PBKDF2-HMAC-SHA256 e salt aleatório.
-- Tokens bearer aleatórios, persistidos somente como hash e válidos por 12
-  horas.
+- Tokens bearer aleatórios, persistidos somente como hash e com expiração por inatividade de 5 minutos (janela deslizante) e limite absoluto de 12 horas.
 - Respostas de usuário sem senha ou hash.
 - Bloqueio de login para contas inativas, sem distinguir conta inexistente,
   senha inválida ou conta inativa na mensagem de erro.
@@ -159,6 +158,47 @@ Resultados obtidos nesta execução:
 O teste em porta alternativa valida o código atual, mas não substitui o
 reinício controlado da instância antiga que ocupa a porta 8000.
 
+## Sessão, fechamento e reabertura (C4-AUTH-003)
+
+- O token fica em `sessionStorage` (por aba/janela), não mais em `localStorage`.
+  Fechar a aba/janela/app descarta o token; atualizar a página (F5) mantém a
+  sessão. Um token legado em `localStorage` é removido e ignorado.
+- No servidor, a sessão expira após 5 minutos sem requisições autenticadas
+  (`SESSION_IDLE_MINUTES`) e nunca passa de 12 horas desde o login
+  (`SESSION_MAX_HOURS`). Cada requisição autenticada renova a janela. O
+  frontend chama `GET /auth/me` a cada 60 s enquanto está aberto; ao fechar,
+  o heartbeat para e a sessão antiga se torna inválida em até 5 minutos, mesmo
+  que o armazenamento do navegador seja restaurado.
+- Não se usa `beforeunload`/`unload`, pois não são garantidos.
+- Um `401` em rota protegida limpa o token e devolve a interface ao login.
+- Cada aba tem sua própria sessão; novas abas pedem login e o logout em uma
+  aba não encerra a outra.
+
+## Conferente em "Registrar Entrada"
+
+O campo de digitação foi removido; a tela mostra o nome do usuário autenticado
+(somente leitura). Ao confirmar a entrada, a interface revalida a sessão em
+`GET /auth/me` e usa o `full_name` devolvido pelo backend. Sem sessão válida, a
+entrada é bloqueada e o usuário volta ao login. Limitação: estoque e
+movimentações ainda são gravados no `localStorage` do navegador, então o nome
+é registrado pelo frontend; o backend (`/movements`, tabela `checkers`) não
+participa desse fluxo. O campo de conferente da tela de Consulta de Estoque
+(edição) não foi alterado.
+
+### Resultados da validação (C4-AUTH-003)
+
+- `python -m pytest -q`: **19 testes aprovados**, 16 subtestes; novos testes de
+  janela por inatividade, expiração sem heartbeat, limite de 12 h e dois
+  usuários com sessões e identidades independentes.
+- `npm run lint` e `npm run build`: aprovados (aviso de chunk > 500 kB).
+- E2E no navegador (backend com SQLite temporário e Vite em portas alternativas):
+  setup do primeiro admin; token em `sessionStorage` e `localStorage` vazio;
+  F5 mantém a sessão; nova aba exibe login sem conteúdo protegido; entrada
+  registrada com o nome do admin; logout, login como segundo usuário e nova
+  entrada gravada com o nome dele; com a sessão expirada no servidor, a
+  confirmação da entrada foi bloqueada e o app voltou ao login (nenhum registro
+  novo). Não foi testado o fechamento real do navegador/PWA instalado nem a
+  expiração temporal real de 5 minutos (coberta apenas por teste automatizado).
 ## Pendências
 
 - Criar o primeiro administrador pelo navegador e validar login,

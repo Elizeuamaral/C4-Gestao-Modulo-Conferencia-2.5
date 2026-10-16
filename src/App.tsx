@@ -21,7 +21,7 @@ import SettingsScreen from './components/SettingsScreen';
 import LoginScreen from './components/LoginScreen';
 import { loadStoredSettings } from './utils/settings';
 import { playSuccessBeep, playErrorBuzzer } from './utils/audio';
-import { ApiUser, createProduct, deactivateProduct, getCurrentUser, listAllProducts, listProducts, logoutUser, updateProduct } from './services/api';
+import { ApiUser, AUTH_EXPIRED_EVENT, clearAuthToken, createProduct, deactivateProduct, getAuthToken, getCurrentUser, listAllProducts, listProducts, logoutUser, setAuthToken as storeAuthToken, updateProduct } from './services/api';
 import {
   ClipboardList,
   Archive,
@@ -97,9 +97,9 @@ const normalizeMovement = (movement: Movement) => ({
 export default function App() {
   const [activeScreen, setActiveScreen] = useState<'MOVIMENTACAO' | 'CONSULTA' | 'CONFIGURACAO'>('MOVIMENTACAO');
   const [settings, setSettings] = useState<AppSettings>(() => loadStoredSettings());
-  const [authToken, setAuthToken] = useState<string | null>(() => localStorage.getItem('c4_auth_token'));
+  const [authToken, setAuthToken] = useState<string | null>(() => getAuthToken());
   const [authUser, setAuthUser] = useState<ApiUser | null>(null);
-  const [authLoading, setAuthLoading] = useState<boolean>(() => Boolean(localStorage.getItem('c4_auth_token')));
+  const [authLoading, setAuthLoading] = useState<boolean>(() => Boolean(getAuthToken()));
 
   const [products, setProducts] = useState<Product[]>([]);
   const [productsLoading, setProductsLoading] = useState(true);
@@ -175,12 +175,30 @@ export default function App() {
     getCurrentUser()
       .then((user) => { if (!cancelled) setAuthUser(user); })
       .catch(() => {
-        localStorage.removeItem('c4_auth_token');
+        clearAuthToken();
         if (!cancelled) { setAuthToken(null); setAuthUser(null); }
       })
       .finally(() => { if (!cancelled) setAuthLoading(false); });
     return () => { cancelled = true; };
   }, [authToken]);
+
+  // Heartbeat keeps the server-side session alive while the app is open; once the
+  // app is closed it stops and the session expires on the server.
+  useEffect(() => {
+    if (!authToken || !authUser) return;
+    const onExpired = () => {
+      clearAuthToken();
+      setAuthToken(null);
+      setAuthUser(null);
+      setActiveScreen('MOVIMENTACAO');
+    };
+    const timer = window.setInterval(() => { getCurrentUser().catch(() => undefined); }, 60_000);
+    window.addEventListener(AUTH_EXPIRED_EVENT, onExpired);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener(AUTH_EXPIRED_EVENT, onExpired);
+    };
+  }, [authToken, authUser]);
 
   useEffect(() => {
     localStorage.setItem('fast_stock_inventory', JSON.stringify(stock));
@@ -884,16 +902,27 @@ export default function App() {
 
   if (!authUser || !authToken) {
     return <LoginScreen onAuthenticated={(token, user) => {
-      localStorage.setItem('c4_auth_token', token);
+      storeAuthToken(token);
       setAuthToken(token);
       setAuthUser(user);
       setAuthLoading(false);
     }} />;
   }
 
+  // A 401 here also clears the session and returns the app to the login screen (see AUTH_EXPIRED_EVENT).
+  const validateSessionUser = async (): Promise<string | null> => {
+    try {
+      const user = await getCurrentUser();
+      setAuthUser(user);
+      return user.full_name;
+    } catch {
+      return null;
+    }
+  };
+
   const handleLogout = async () => {
     try { await logoutUser(); } catch (error) { console.warn('Não foi possível encerrar a sessão no servidor:', error); }
-    localStorage.removeItem('c4_auth_token');
+    clearAuthToken();
     setAuthToken(null);
     setAuthUser(null);
     setActiveScreen('MOVIMENTACAO');
@@ -1017,6 +1046,8 @@ export default function App() {
               scannedCode={scannedCode}
               setScannedCode={setScannedCode}
               onConferenceStateChange={setHasActiveConference}
+              currentUserName={authUser.full_name}
+              onValidateSession={validateSessionUser}
             />
           )}
 

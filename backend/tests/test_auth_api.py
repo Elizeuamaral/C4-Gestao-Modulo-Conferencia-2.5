@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from backend.app.api.dependencies import get_db
+from backend.app.api.dependencies import SESSION_IDLE_MINUTES, SESSION_MAX_HOURS, get_db
 from backend.app.db.models import AuthSession, Base, User
 from backend.app.main import create_app
 
@@ -399,6 +399,59 @@ class AuthApiTests(unittest.TestCase):
         self.assertEqual(self.client.get("/auth/me", headers=headers).status_code, 401)
         with self.session_factory() as db:
             self.assertEqual(db.query(AuthSession).count(), 0)
+
+    def test_new_session_uses_short_idle_window_and_slides_on_use(self) -> None:
+        _, headers = self.create_admin()
+        now = datetime.now(timezone.utc)
+        with self.session_factory() as db:
+            session = db.query(AuthSession).one()
+            first_expiry = datetime.fromisoformat(session.expires_at)
+            self.assertLessEqual(first_expiry - now, timedelta(minutes=SESSION_IDLE_MINUTES, seconds=5))
+            session.expires_at = (now + timedelta(seconds=60)).isoformat()
+            db.commit()
+
+        self.assertEqual(self.client.get("/auth/me", headers=headers).status_code, 200)
+        with self.session_factory() as db:
+            extended = datetime.fromisoformat(db.query(AuthSession).one().expires_at)
+            self.assertGreater(extended - now, timedelta(minutes=SESSION_IDLE_MINUTES - 1))
+
+    def test_idle_session_expires_without_heartbeat(self) -> None:
+        _, headers = self.create_admin()
+        with self.session_factory() as db:
+            session = db.query(AuthSession).one()
+            session.expires_at = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+            db.commit()
+        self.assertEqual(self.client.get("/auth/me", headers=headers).status_code, 401)
+        self.assertEqual(self.client.get("/products", headers=headers).status_code, 401)
+
+    def test_session_cannot_slide_beyond_absolute_maximum(self) -> None:
+        _, headers = self.create_admin()
+        now = datetime.now(timezone.utc)
+        with self.session_factory() as db:
+            session = db.query(AuthSession).one()
+            session.created_at = (now - timedelta(hours=SESSION_MAX_HOURS, seconds=-30)).isoformat()
+            session.expires_at = (now + timedelta(seconds=10)).isoformat()
+            db.commit()
+        self.assertEqual(self.client.get("/auth/me", headers=headers).status_code, 200)
+        with self.session_factory() as db:
+            capped = datetime.fromisoformat(db.query(AuthSession).one().expires_at)
+            self.assertLessEqual(capped - now, timedelta(seconds=35))
+        with self.session_factory() as db:
+            session = db.query(AuthSession).one()
+            session.created_at = (now - timedelta(hours=SESSION_MAX_HOURS + 1)).isoformat()
+            db.commit()
+        self.assertEqual(self.client.get("/auth/me", headers=headers).status_code, 401)
+
+    def test_two_users_have_independent_identities_and_sessions(self) -> None:
+        _, admin_headers = self.create_admin()
+        self.create_user(admin_headers, username="maria")
+        login = self.client.post("/auth/login", json={"username": "maria", "password": "user-password-123"})
+        maria_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+        self.assertEqual(self.client.get("/auth/me", headers=admin_headers).json()["username"], "admin")
+        self.assertEqual(self.client.get("/auth/me", headers=maria_headers).json()["username"], "maria")
+        self.assertEqual(self.client.post("/auth/logout", headers=maria_headers).status_code, 204)
+        self.assertEqual(self.client.get("/auth/me", headers=maria_headers).status_code, 401)
+        self.assertEqual(self.client.get("/auth/me", headers=admin_headers).status_code, 200)
 
     def test_operational_api_routes_remain_registered_and_protected(self) -> None:
         paths = self.client.get("/openapi.json").json()["paths"]

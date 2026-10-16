@@ -1,22 +1,21 @@
 """Login, first-run administrator setup, and user CRUD endpoints."""
 from __future__ import annotations
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from backend.app.api.dependencies import bearer_scheme, get_current_user, require_admin
+from backend.app.api.dependencies import bearer_scheme, get_current_user, require_admin, session_expiration
 from backend.app.api.schemas.auth import InitialAdminSetup, LoginResponse, PasswordChange, PasswordReset, SetupStatus, UserCreate, UserCredentials, UserResponse, UserUpdate
 from backend.app.core.security import create_session_token, hash_password, hash_session_token, verify_password
 from backend.app.db.database import get_db
 from backend.app.db.models import AuthSession, User
 router = APIRouter(prefix="/auth", tags=["authentication"])
-SESSION_HOURS = 12
 
 def _create_session(db: Session, user: User) -> LoginResponse:
     token = create_session_token()
     now = datetime.now(timezone.utc)
-    db.add(AuthSession(user_id=user.id, token_hash=hash_session_token(token), expires_at=(now + timedelta(hours=SESSION_HOURS)).isoformat(), created_at=now.isoformat()))
+    db.add(AuthSession(user_id=user.id, token_hash=hash_session_token(token), expires_at=session_expiration(now, now).isoformat(), created_at=now.isoformat()))
     db.commit(); db.refresh(user)
     return LoginResponse(access_token=token, user=user)
 

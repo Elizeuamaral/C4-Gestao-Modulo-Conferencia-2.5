@@ -37,6 +37,10 @@ interface MovementScreenProps {
   scannedCode: string;
   setScannedCode: (code: string) => void;
   onConferenceStateChange: (hasActiveConference: boolean) => void;
+  // Name of the authenticated user; the checker can no longer be typed manually.
+  currentUserName: string;
+  // Re-validates the session with the backend and returns the authenticated user's name, or null.
+  onValidateSession: () => Promise<string | null>;
 }
 
 type PendingMovementEntry = Omit<Movement, 'id' | 'timestamp' | 'supplier' | 'invoiceNumber'> & {
@@ -51,7 +55,9 @@ export default function MovementScreen({
   onAddProduct,
   scannedCode,
   setScannedCode,
-  onConferenceStateChange
+  onConferenceStateChange,
+  currentUserName,
+  onValidateSession
 }: MovementScreenProps) {
   const type = 'ENTRADA';
   const defaultInitialAddress = settings?.defaultAddress || 'ESTOQUE';
@@ -91,7 +97,7 @@ export default function MovementScreen({
   const [address, setAddress] = useState(defaultInitialAddress);
   const [supplier, setSupplier] = useState('');
   const [invoiceNumber, setInvoiceNumber] = useState('');
-  const [checkerName, setCheckerName] = useState('');
+  const checkerName = currentUserName;
   const [isConferenceStarted, setIsConferenceStarted] = useState(false);
   const [receivedDate, setReceivedDate] = useState(getTodayIsoDate());
   const [notes, setNotes] = useState('');
@@ -106,7 +112,7 @@ export default function MovementScreen({
   const [pendingEntries, setPendingEntries] = useState<PendingMovementEntry[]>([]);
 
   const barcodeInputRef = useRef<HTMLInputElement>(null);
-  const checkerInputRef = useRef<HTMLInputElement>(null);
+  const checkerInputRef = useRef<HTMLButtonElement>(null);
   const lastInputTimeRef = useRef(0);
   const scannerTypingRef = useRef(false);
   const suggestionTimeoutRef = useRef<number | null>(null);
@@ -127,7 +133,7 @@ export default function MovementScreen({
   useEffect(() => {
     if (scannedCode) {
       if (!isConferenceStarted) {
-        setErrorMessage('Informe o conferente e clique em "Liberar conferência" antes de bipar produtos.');
+        setErrorMessage('Clique em "Liberar conferência" antes de bipar produtos.');
         playErrorBuzzer();
         setScannedCode('');
         if (checkerInputRef.current) {
@@ -317,21 +323,15 @@ export default function MovementScreen({
   };
 
   const handleStartConference = () => {
-    const normalizedCheckerName = checkerName.trim();
-
-    if (!normalizedCheckerName) {
-      setErrorMessage('Informe o nome do conferente para liberar a conferência.');
+    if (!checkerName.trim()) {
+      setErrorMessage('Sessão inválida. Entre novamente para liberar a conferência.');
       playErrorBuzzer();
-      if (checkerInputRef.current) {
-        checkerInputRef.current.focus();
-      }
       return;
     }
 
-    setCheckerName(normalizedCheckerName);
     setIsConferenceStarted(true);
     setErrorMessage(null);
-    setSuccessMessage(`Conferência liberada para ${normalizedCheckerName}.`);
+    setSuccessMessage(`Conferência liberada para ${checkerName}.`);
   };
 
   const handleAddToQueue = (e: React.FormEvent) => {
@@ -421,13 +421,13 @@ export default function MovementScreen({
     setShowEntryConfirmationModal(true);
   };
 
-  const handleConfirmBatchEntry = (e: React.FormEvent) => {
+  const handleConfirmBatchEntry = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
     setSuccessMessage(null);
 
-    if (!isConferenceStarted || !checkerName.trim()) {
-      setErrorMessage('Informe o conferente para iniciar a conferência.');
+    if (!isConferenceStarted) {
+      setErrorMessage('Libere a conferência antes de confirmar a entrada.');
       playErrorBuzzer();
       return;
     }
@@ -440,6 +440,15 @@ export default function MovementScreen({
 
     if (!invoiceNumber.trim()) {
       setErrorMessage('O número da nota é obrigatório.');
+      playErrorBuzzer();
+      return;
+    }
+
+    // The checker recorded is the user identified by the backend at confirmation time.
+    const verifiedCheckerName = (await onValidateSession())?.trim();
+    if (!verifiedCheckerName) {
+      setShowEntryConfirmationModal(false);
+      setErrorMessage('Não foi possível validar sua sessão. Entre novamente para registrar a entrada.');
       playErrorBuzzer();
       return;
     }
@@ -458,7 +467,7 @@ export default function MovementScreen({
         address: entry.address,
         supplier: supplier.trim(),
         invoiceNumber: invoiceNumber.trim().toUpperCase(),
-        checkerName: entry.checkerName,
+        checkerName: verifiedCheckerName,
         receivedDate: entry.receivedDate,
         entryMethod: 'Conferencia',
         notes: entry.notes,
@@ -469,7 +478,6 @@ export default function MovementScreen({
     setPendingEntries([]);
     setSupplier('');
     setInvoiceNumber('');
-    setCheckerName('');
     setIsConferenceStarted(false);
     setShowEntryConfirmationModal(false);
     setSuccessMessage(`Sucesso! ${totalItems} item(ns) conferido(s) e lançado(s) na Consulta de Estoque.`);
@@ -572,25 +580,16 @@ export default function MovementScreen({
                   <User className="h-4 w-4 text-indigo-500" />
                   Conferente
                 </label>
-                <input
-                  ref={checkerInputRef}
-                  type="text"
-                  value={checkerName}
-                  onChange={(e) => setCheckerName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !isConferenceStarted) {
-                      e.preventDefault();
-                      handleStartConference();
-                    }
-                  }}
-                  placeholder="Digite o nome do conferente"
-                  disabled={isConferenceStarted}
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:border-indigo-500 disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed"
-                  id="checker-name-input"
-                />
+                <p
+                  className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-100 font-medium text-slate-700"
+                  id="checker-name-display"
+                >
+                  {checkerName}
+                </p>
               </div>
 
               <button
+                ref={checkerInputRef}
                 type="button"
                 onClick={handleStartConference}
                 disabled={isConferenceStarted}

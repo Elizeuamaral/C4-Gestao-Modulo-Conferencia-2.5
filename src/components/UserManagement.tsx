@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ApiUser, changeOwnPassword, createUser, listUsers, resetUserPassword, setUserActive, updateUser } from '../services/api';
+import { ApiUser, changeOwnPassword, clearAuthToken, createUser, listUsers, resetUserPassword, setUserActive, updateUser } from '../services/api';
 import { KeyRound, Pencil, Plus, RefreshCw, ShieldCheck, UserRound, UserX } from 'lucide-react';
 
 interface Props { currentUser: ApiUser; onNotify: (message: string, type: 'success' | 'info') => void; }
@@ -50,7 +50,7 @@ export default function UserManagement({ currentUser, onNotify }: Props) {
   };
   const saveOwnPassword = async (event: React.FormEvent) => {
     event.preventDefault();
-    try { await changeOwnPassword(currentPassword, ownNewPassword); localStorage.removeItem('c4_auth_token'); window.location.reload(); }
+    try { await changeOwnPassword(currentPassword, ownNewPassword); clearAuthToken(); window.location.reload(); }
     catch (e) { setError(e instanceof Error ? e.message : 'Não foi possível alterar a senha.'); }
   };
 
