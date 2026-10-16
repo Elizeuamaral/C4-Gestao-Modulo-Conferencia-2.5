@@ -21,6 +21,8 @@ EXPECTED_TABLES = {
     "admin_credentials",
     "users",
     "auth_sessions",
+    "invoices",
+    "invoice_items",
 }
 
 

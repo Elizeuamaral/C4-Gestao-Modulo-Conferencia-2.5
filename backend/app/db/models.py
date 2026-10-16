@@ -20,6 +20,8 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    func,
+    literal_column,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -275,6 +277,27 @@ class Movement(Base):
     )
     idempotency_key: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, unique=True)
 
+    # C4-DB-001 audit columns (nullable so pre-existing movements stay valid).
+    # quantity_before/after describe the balance of the affected stock item
+    # (the origin item for transfers).
+    user_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    invoice_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        ForeignKey("invoices.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    invoice_item_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        ForeignKey("invoice_items.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    quantity_before: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    quantity_after: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
     product: Mapped["Product"] = relationship(back_populates="movements")
 
     source_stock_item: Mapped[Optional["StockItem"]] = relationship(
@@ -391,3 +414,120 @@ class AuthSession(Base):
     token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     expires_at: Mapped[str] = mapped_column(String(40), nullable=False)
     created_at: Mapped[str] = mapped_column(String(40), nullable=False, default=utc_now_iso)
+
+
+INVOICE_STATUSES = ("PENDENTE", "EM_CONFERENCIA", "CONFERIDA", "CONFERIDA_COM_DIVERGENCIA")
+INVOICE_ITEM_STATUSES = ("PENDENTE", "CONFERIDO", "DIVERGENTE")
+
+
+class Invoice(Base):
+    """Nota fiscal de entrada. Header data that may be absent stays nullable."""
+
+    __tablename__ = "invoices"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('PENDENTE', 'EM_CONFERENCIA', 'CONFERIDA', 'CONFERIDA_COM_DIVERGENCIA')",
+            name="ck_invoices_status",
+        ),
+        # Same number/series/supplier cannot be registered twice.
+        Index(
+            "uq_invoices_number_series_supplier",
+            literal_column("number"),
+            func.coalesce(literal_column("series"), ""),
+            func.coalesce(literal_column("supplier"), ""),
+            unique=True,
+        ),
+        Index("uq_invoices_access_key", "access_key", unique=True),
+        Index("idx_invoices_status", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    number: Mapped[str] = mapped_column(String(100), nullable=False)
+    series: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    access_key: Mapped[Optional[str]] = mapped_column(String(44), nullable=True)
+    supplier: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    received_date: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="PENDENTE")
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_by_user_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    conferred_by_user_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    conferred_at: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False, default=utc_now_iso)
+    updated_at: Mapped[str] = mapped_column(String(40), nullable=False, default=utc_now_iso, onupdate=utc_now_iso)
+
+    items: Mapped[list["InvoiceItem"]] = relationship(
+        back_populates="invoice",
+        order_by="InvoiceItem.line_number",
+        cascade="all, delete-orphan",
+    )
+
+
+class InvoiceItem(Base):
+    """One invoice line: QTD. NF and QTD. CONF. are historical and immutable
+    once conferred; the live balance (QTD. EST.) stays in stock_items."""
+
+    __tablename__ = "invoice_items"
+    __table_args__ = (
+        UniqueConstraint("invoice_id", "line_number", name="uq_invoice_items_line"),
+        CheckConstraint("invoice_quantity >= 0", name="ck_invoice_items_invoice_qty"),
+        CheckConstraint(
+            "conferred_quantity IS NULL OR conferred_quantity >= 0",
+            name="ck_invoice_items_conferred_qty",
+        ),
+        CheckConstraint(
+            "unit IN ('FD', 'UN', 'CX', 'PCT')", name="ck_invoice_items_unit"
+        ),
+        CheckConstraint(
+            "status IN ('PENDENTE', 'CONFERIDO', 'DIVERGENTE')",
+            name="ck_invoice_items_status",
+        ),
+        Index("idx_invoice_items_invoice", "invoice_id"),
+        Index("idx_invoice_items_product", "product_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    invoice_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("invoices.id", ondelete="CASCADE"), nullable=False
+    )
+    line_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    product_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("products.id", ondelete="RESTRICT"), nullable=True
+    )
+    product_code: Mapped[str] = mapped_column(String(255), nullable=False)
+    product_description: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    unit: Mapped[str] = mapped_column(String(10), nullable=False)
+    invoice_quantity: Mapped[float] = mapped_column(Float, nullable=False)  # QTD. NF
+    # Lot data printed on the invoice, when present (informational).
+    invoice_lot: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    invoice_expiration_date: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="PENDENTE")
+    conferred_quantity: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # QTD. CONF.
+    divergence_quantity: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # conf - NF
+    conferred_by_user_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    conferred_at: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    stock_item_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("stock_items.id", ondelete="RESTRICT"), nullable=True
+    )
+    entry_movement_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("movements.id", ondelete="RESTRICT"), nullable=True
+    )
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False, default=utc_now_iso)
+    updated_at: Mapped[str] = mapped_column(String(40), nullable=False, default=utc_now_iso, onupdate=utc_now_iso)
+
+    invoice: Mapped["Invoice"] = relationship(back_populates="items")
+    product: Mapped[Optional["Product"]] = relationship()
+    stock_item: Mapped[Optional["StockItem"]] = relationship()
+
+    @property
+    def current_stock_quantity(self) -> Optional[float]:
+        """QTD. EST.: live balance of the lot this item was received into."""
+        return self.stock_item.quantity if self.stock_item is not None else None
+

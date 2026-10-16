@@ -15,12 +15,14 @@ from backend.app.api.dependencies import get_current_user
 from backend.app.api.routes.auth import router as auth_router
 from backend.app.api.routes.checkers import router as checkers_router
 from backend.app.api.routes.health import router as health_router
+from backend.app.api.routes.invoices import router as invoices_router
 from backend.app.api.routes.locations import router as locations_router
 from backend.app.api.routes.movements import router as movements_router
 from backend.app.api.routes.products import router as products_router
 from backend.app.api.routes.stock import router as stock_router
 from backend.app.core.config import settings
 from backend.app.db.database import engine
+from backend.app.db.migrations import apply_schema_upgrades
 from backend.app.db.models import Base
 
 
@@ -28,6 +30,7 @@ from backend.app.db.models import Base
 async def lifespan(_app: FastAPI):
     """Create newly introduced tables without altering existing tables."""
     Base.metadata.create_all(bind=engine)
+    apply_schema_upgrades(engine)
     yield
 
 
@@ -67,6 +70,7 @@ def create_app() -> FastAPI:
     app.include_router(checkers_router, dependencies=protected)
     app.include_router(stock_router, dependencies=protected)
     app.include_router(movements_router, dependencies=protected)
+    app.include_router(invoices_router, dependencies=protected)
 
     return app
 
