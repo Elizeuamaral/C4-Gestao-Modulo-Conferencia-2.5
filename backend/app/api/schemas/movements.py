@@ -80,6 +80,11 @@ class MovementResponse(BaseModel):
     reversal_of_id: str | None
     correction_of_id: str | None
     idempotency_key: str | None
+    user_id: str | None = None
+    invoice_id: str | None = None
+    invoice_item_id: str | None = None
+    quantity_before: float | None = None
+    quantity_after: float | None = None
 
 
 class MovementListResponse(BaseModel):

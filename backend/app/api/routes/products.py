@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from backend.app.api.dependencies import require_admin
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -25,7 +26,7 @@ from backend.app.services.products import (
 router = APIRouter(prefix="/products", tags=["products"])
 
 
-@router.post("", response_model=ProductResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=ProductResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_admin)])
 def create_product_endpoint(
     payload: ProductCreate,
     db: Session = Depends(get_db),
@@ -92,7 +93,7 @@ def get_product_endpoint(
     return product
 
 
-@router.put("/{product_id}", response_model=ProductResponse)
+@router.put("/{product_id}", response_model=ProductResponse, dependencies=[Depends(require_admin)])
 def update_product_endpoint(
     product_id: str,
     payload: ProductUpdate,
@@ -120,7 +121,7 @@ def update_product_endpoint(
         ) from exc
 
 
-@router.delete("/{product_id}", response_model=ProductResponse)
+@router.delete("/{product_id}", response_model=ProductResponse, dependencies=[Depends(require_admin)])
 def deactivate_product_endpoint(
     product_id: str,
     db: Session = Depends(get_db),

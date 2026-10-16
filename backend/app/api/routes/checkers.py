@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from backend.app.api.dependencies import require_admin
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -25,7 +26,7 @@ from backend.app.services.checkers import (
 router = APIRouter(prefix="/checkers", tags=["checkers"])
 
 
-@router.post("", response_model=CheckerResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=CheckerResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_admin)])
 def create_checker_endpoint(
     payload: CheckerCreate,
     db: Session = Depends(get_db),
@@ -92,7 +93,7 @@ def get_checker_endpoint(
     return checker
 
 
-@router.put("/{checker_id}", response_model=CheckerResponse)
+@router.put("/{checker_id}", response_model=CheckerResponse, dependencies=[Depends(require_admin)])
 def update_checker_endpoint(
     checker_id: str,
     payload: CheckerUpdate,
@@ -120,7 +121,7 @@ def update_checker_endpoint(
         ) from exc
 
 
-@router.delete("/{checker_id}", response_model=CheckerResponse)
+@router.delete("/{checker_id}", response_model=CheckerResponse, dependencies=[Depends(require_admin)])
 def deactivate_checker_endpoint(
     checker_id: str,
     db: Session = Depends(get_db),

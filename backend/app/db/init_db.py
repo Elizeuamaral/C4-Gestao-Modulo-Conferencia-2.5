@@ -8,12 +8,14 @@ from __future__ import annotations
 
 from backend.app.db.database import engine
 from backend.app.db.diagnostics import EXPECTED_TABLES, check_database
+from backend.app.db.migrations import apply_schema_upgrades
 from backend.app.db.models import Base
 
 
 def initialize_database() -> None:
     """Create all missing tables and validate the resulting schema."""
     Base.metadata.create_all(bind=engine)
+    apply_schema_upgrades(engine)
 
     diagnostics = check_database()
     missing_tables = set(diagnostics["missing_tables"])
