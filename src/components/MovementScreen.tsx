@@ -97,6 +97,8 @@ export default function MovementScreen({
   const [address, setAddress] = useState(defaultInitialAddress);
   const [supplier, setSupplier] = useState('');
   const [invoiceNumber, setInvoiceNumber] = useState('');
+  // QTD. NF informada por linha da lista (opcional), indexada por queueId.
+  const [invoiceQuantities, setInvoiceQuantities] = useState<Record<string, string>>({});
   const checkerName = currentUserName;
   const [isConferenceStarted, setIsConferenceStarted] = useState(false);
   const [receivedDate, setReceivedDate] = useState(getTodayIsoDate());
@@ -310,6 +312,7 @@ export default function MovementScreen({
     resetCurrentEntryFields();
     setSupplier('');
     setInvoiceNumber('');
+    setInvoiceQuantities({});
     setErrorMessage(null);
     setSuccessMessage(null);
     setShowProductSuggestions(false);
@@ -444,6 +447,19 @@ export default function MovementScreen({
       return;
     }
 
+    const parsedInvoiceQuantities: Record<string, number | undefined> = {};
+    for (const entry of pendingEntries) {
+      const raw = (invoiceQuantities[entry.queueId] ?? '').trim().replace(',', '.');
+      if (raw === '') continue;
+      const value = Number(raw);
+      if (!Number.isFinite(value) || value < 0) {
+        setErrorMessage(`Qtd. NF inválida para ${entry.productName}.`);
+        playErrorBuzzer();
+        return;
+      }
+      parsedInvoiceQuantities[entry.queueId] = value;
+    }
+
     // The checker recorded is the user identified by the backend at confirmation time.
     const verifiedCheckerName = (await onValidateSession())?.trim();
     if (!verifiedCheckerName) {
@@ -459,6 +475,7 @@ export default function MovementScreen({
         productName: entry.productName,
         type: entry.type,
         quantity: entry.quantity,
+        invoiceQuantity: parsedInvoiceQuantities[entry.queueId],
         unit: entry.unit,
         lot: entry.lot,
         manufacturingDate: entry.manufacturingDate,
@@ -478,6 +495,7 @@ export default function MovementScreen({
     setPendingEntries([]);
     setSupplier('');
     setInvoiceNumber('');
+    setInvoiceQuantities({});
     setIsConferenceStarted(false);
     setShowEntryConfirmationModal(false);
     setSuccessMessage(`Sucesso! ${totalItems} item(ns) conferido(s) e lançado(s) na Consulta de Estoque.`);
@@ -1033,6 +1051,34 @@ export default function MovementScreen({
                   className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 focus:outline-none focus:border-indigo-500 font-mono text-slate-800 uppercase bg-white"
                   id="invoice-number-input"
                 />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-xs font-semibold text-slate-600">
+                  Qtd. na nota fiscal (opcional)
+                </label>
+                <div className="max-h-40 overflow-y-auto space-y-1.5 rounded-lg border border-slate-200 p-2">
+                  {pendingEntries.map((entry) => (
+                    <div key={entry.queueId} className="flex items-center gap-2 text-xs">
+                      <span className="flex-1 truncate text-slate-700" title={entry.productName}>
+                        {entry.productName} <span className="text-slate-400">(conf. {entry.quantity} {entry.unit})</span>
+                      </span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="any"
+                        value={invoiceQuantities[entry.queueId] ?? ''}
+                        onChange={(e) =>
+                          setInvoiceQuantities((prev) => ({ ...prev, [entry.queueId]: e.target.value }))
+                        }
+                        placeholder="Qtd. NF"
+                        className="w-24 px-2 py-1 rounded-md border border-slate-200 text-right font-mono text-slate-800 focus:outline-none focus:border-indigo-500"
+                        id={`invoice-qty-${entry.queueId}`}
+                      />
+                    </div>
+                  ))}
+                </div>
+                <p className="text-[10px] text-slate-400">Deixe em branco se a nota não será comparada; a coluna QTD. NF ficará com '-'.</p>
               </div>
 
               <div className="flex justify-end gap-2 pt-1">

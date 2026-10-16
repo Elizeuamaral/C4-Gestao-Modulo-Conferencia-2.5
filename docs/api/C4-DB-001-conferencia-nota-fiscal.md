@@ -65,3 +65,16 @@ banco antigo e regressão de movimentações.
 - Leitura de XML/chave de acesso não implementada (apenas campos).
 - Sem perfis específicos por operação: qualquer usuário autenticado pode criar e
   conferir notas.
+
+## Consulta de Estoque no frontend (C4-UI-ESTOQUE-001)
+
+O estoque da interface ainda vive no `localStorage`. Campos do lote: `invoiceQuantity`
+(QTD. NF, opcional), `receivedQuantity` (QTD. CONF.) e `quantity` (QTD. EST.).
+
+- **Entrada manual:** o modal de confirmação tem um campo opcional "Qtd. NF" por linha.
+  Em branco, a coluna QTD. NF mostra "-" (nada é inventado). Ao somar entradas no mesmo
+  lote, a NF só é somada se todas as entradas a informaram; caso contrário fica "-".
+- **Saída/transferência parcial:** os totais históricos são divididos, não duplicados. O
+  trecho movido recebe CONF. e NF iguais à quantidade movida; o registro original mantém
+  o restante, inclusive a divergência. A soma de CONF. (e de NF) entre os registros
+  resultantes é igual ao total original.

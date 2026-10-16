@@ -423,9 +423,26 @@ export default function App() {
     }
   };
 
+  // Divide os totais históricos de um lote numa saída/transferência parcial sem duplicá-los:
+  // o trecho movido entra no novo registro como conferido (e, se havia NF, faturado) na própria
+  // quantidade movida; o restante, inclusive qualquer divergência, permanece no registro original.
+  const splitLotTotals = (item: StockItem, movedQuantity: number) => {
+    const received = item.receivedQuantity ?? item.quantity;
+    const movedReceived = Math.min(movedQuantity, received);
+    const hasInvoice = typeof item.invoiceQuantity === 'number';
+    const movedInvoice = hasInvoice ? Math.min(movedQuantity, item.invoiceQuantity as number) : undefined;
+    return {
+      remaining: {
+        receivedQuantity: received - movedReceived,
+        invoiceQuantity: hasInvoice ? (item.invoiceQuantity as number) - (movedInvoice as number) : undefined,
+      },
+      moved: { receivedQuantity: movedReceived, invoiceQuantity: movedInvoice },
+    };
+  };
+
   const handleAddMovement = (newMov: Omit<Movement, 'id' | 'timestamp'>) => {
     const timestamp = new Date().toISOString();
-    const id = `mov-${Date.now()}`;
+    const id = `mov-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const normalizedUnit: Movement['unit'] =
       newMov.unit === 'FD' || newMov.unit === 'CX' || newMov.unit === 'PCT' ? newMov.unit : 'UN';
     const movementWithMeta: Movement = { ...newMov, unit: normalizedUnit, id, timestamp };
@@ -448,15 +465,16 @@ export default function App() {
             ...existingItem,
             quantity: nextQuantity,
             receivedQuantity: nextReceivedQuantity,
+            // A soma só é comparável com a conferida quando todas as entradas do lote informaram a NF.
             invoiceQuantity:
-              typeof newMov.invoiceQuantity === 'number'
-                ? (existingItem.invoiceQuantity ?? 0) + newMov.invoiceQuantity
-                : existingItem.invoiceQuantity,
+              typeof newMov.invoiceQuantity === 'number' && typeof existingItem.invoiceQuantity === 'number'
+                ? existingItem.invoiceQuantity + newMov.invoiceQuantity
+                : undefined,
             entryMethod: existingItem.entryMethod || 'Conferencia'
           };
         } else {
           stockCopy.push({
-            id: `stock-${Date.now()}`,
+            id: `stock-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
             productCode: newMov.productCode,
             productName: newMov.productName,
             quantity: newMov.quantity,
@@ -561,8 +579,10 @@ export default function App() {
           });
         } else {
           // Baixa parcial: atualiza quantidade restante e cria registro baixado no banco de dados
+          const split = splitLotTotals(selectedItem, safeQuantity);
           const updatedOriginal: StockItem = {
             ...selectedItem,
+            ...split.remaining,
             quantity: selectedItem.quantity - safeQuantity,
             updatedAt: today,
             updateReason: `Baixa parcial de ${safeQuantity} ${selectedItem.unit}`,
@@ -571,8 +591,7 @@ export default function App() {
             ...selectedItem,
             id: `stock-baixado-${Date.now()}`,
             quantity: safeQuantity,
-            receivedQuantity: safeQuantity,
-            invoiceQuantity: undefined,
+            ...split.moved,
             address: 'Baixado',
             updatedAt: today,
             updateReason: 'Baixa de mercadoria',
@@ -624,8 +643,10 @@ export default function App() {
           };
         });
       } else {
+        const split = splitLotTotals(selectedItem, safeQuantity);
         const remainingItem: StockItem = {
           ...selectedItem,
+          ...split.remaining,
           quantity: selectedItem.quantity - safeQuantity,
           updatedAt: today,
           updateReason: `Transferência parcial para ${destination}`,
@@ -634,8 +655,7 @@ export default function App() {
           ...selectedItem,
           id: `stock-transfer-${Date.now()}`,
           quantity: safeQuantity,
-          receivedQuantity: safeQuantity,
-          invoiceQuantity: undefined,
+          ...split.moved,
           address: destination,
           expirationDate: noExpirationDate ? undefined : (expirationDate || selectedItem.expirationDate),
           noExpirationDate,
