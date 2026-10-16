@@ -15,12 +15,22 @@ export default function LoginScreen({ onAuthenticated }: LoginScreenProps) {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
+  const [setupCheckFailed, setSetupCheckFailed] = useState(false);
+
+  const checkSetup = () => {
+    setCheckingSetup(true);
+    setSetupCheckFailed(false);
+    setError('');
     getSetupStatus()
       .then((result) => setSetupRequired(result.setup_required))
-      .catch((reason) => setError(reason instanceof Error ? reason.message : 'Não foi possível conectar à API.'))
+      .catch((reason) => {
+        setSetupCheckFailed(true);
+        setError(reason instanceof Error ? reason.message : 'Não foi possível conectar à API.');
+      })
       .finally(() => setCheckingSetup(false));
-  }, []);
+  };
+
+  useEffect(() => { checkSetup(); }, []);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -46,7 +56,12 @@ export default function LoginScreen({ onAuthenticated }: LoginScreenProps) {
           <div className="rounded-2xl bg-emerald-600 p-3 text-white"><ShieldCheck className="h-7 w-7" /></div>
           <div><h1 className="text-xl font-black text-slate-900">C4 Gestão</h1><p className="text-sm text-slate-500">Módulo Conferência 2.5</p></div>
         </div>
-        {checkingSetup ? <p className="text-sm text-slate-600">Verificando configuração inicial...</p> : (
+        {checkingSetup ? <p className="text-sm text-slate-600">Verificando configuração inicial...</p> : setupCheckFailed ? (
+          <div className="space-y-4">
+            <p role="alert" className="rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{error}</p>
+            <button type="button" onClick={checkSetup} className="w-full rounded-xl bg-indigo-600 px-4 py-3 font-bold text-white hover:bg-indigo-500">Tentar novamente</button>
+          </div>
+        ) : (
           <>
             <h2 className="text-lg font-bold text-slate-800">{setupRequired ? 'Configurar administrador' : 'Entrar no sistema'}</h2>
             <p className="text-sm text-slate-500 mt-1 mb-5">{setupRequired ? 'Crie a primeira conta administrativa. Esta tela aparecerá apenas enquanto não houver usuários cadastrados.' : 'Informe seu usuário e senha para continuar.'}</p>

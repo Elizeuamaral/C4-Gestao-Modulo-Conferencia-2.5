@@ -51,6 +51,11 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
 
   if (!response.ok) {
+    if (response.status === 404 && path.startsWith('/auth/') && (data === null || (typeof data === 'object' && (data as { detail?: unknown }).detail === 'Not Found'))) {
+      throw new Error(
+        `A API em ${API_BASE_URL} não possui as rotas de autenticação. Reinicie o backend com a versão atual do projeto.`
+      );
+    }
     const detail =
       typeof data === 'object' && data !== null && 'detail' in data
         ? String((data as { detail: unknown }).detail)

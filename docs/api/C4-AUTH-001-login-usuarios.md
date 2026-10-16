@@ -1,56 +1,175 @@
 # C4-AUTH-001 — Login e gerenciamento de usuários
 
-## O que esta etapa adiciona
+## Situação da etapa
 
-- Login com usuário e senha.
-- Criação do primeiro administrador apenas durante a configuração inicial.
-- Senhas armazenadas com hash PBKDF2-HMAC-SHA256 e salt aleatório; a senha original não é gravada.
-- Sessões bearer aleatórias, armazenadas no banco apenas como hash e com validade de 12 horas.
-- CRUD administrativo: criar usuário, editar nome/perfil, redefinir senha, inativar e reativar.
+**Backend corrigido e validado na porta 8000; falta apenas o teste manual do
+primeiro cadastro no navegador (ver abaixo).**
+
+Causa do HTTP 404 em `GET /auth/setup-status`: o processo que ocupava a porta
+8000 (PID 8164) foi iniciado em 14/10/2026 às 11:10, antes de as rotas de
+autenticação serem commitadas (14/10/2026 às 23:17). O uvicorn roda sem
+`--reload`, então continuou servindo o código antigo, cujo OpenAPI não tinha
+rotas `/auth/*`. O código da branch sempre registrou as rotas corretamente. A
+correção foi reiniciar somente esse PID e iniciar o backend atual. Após o
+reinício, `GET /auth/setup-status` responde 200 (`{"setup_required":true}`
+enquanto não houver usuários), `/docs` responde 200 e o OpenAPI lista as 11
+rotas `/auth/*`.
+
+Se o backend for alterado novamente, é preciso reiniciá-lo (sem `--reload`).
+
+O frontend agora mostra uma mensagem clara, com botão "Tentar novamente", quando
+a API está indisponível ou não possui as rotas de autenticação, em vez de exibir
+o formulário de login com "Not Found".
+
+## O que está implementado
+
+- Senhas armazenadas com PBKDF2-HMAC-SHA256 e salt aleatório.
+- Tokens bearer aleatórios, persistidos somente como hash e válidos por 12
+  horas.
+- Respostas de usuário sem senha ou hash.
+- Bloqueio de login para contas inativas, sem distinguir conta inexistente,
+  senha inválida ou conta inativa na mensagem de erro.
+- Criação do primeiro administrador apenas quando ainda não há usuários e
+  quando a chamada vem de loopback.
 - Perfis `ADMIN` e `CONFERENTE`.
-- Bloqueio de login para usuários inativos.
-- Proteção das APIs operacionais para exigir login e proteção de cadastros administrativos para exigir administrador.
-- Proteção contra inativar a própria conta ou remover/inativar o último administrador ativo.
-- A aba passa a se chamar **Configurações** e inclui o gerenciamento de usuários.
-- A tabela de usuários e sessões é criada sem alterar as tabelas de estoque existentes.
+- CRUD administrativo de usuários, ativação/inativação e redefinição de senha.
+- Alteração da própria senha, revogando as sessões existentes.
+- Logout autenticado que invalida a sessão apresentada.
+- Proteção contra inativar a própria conta ou remover/inativar o último
+  administrador ativo.
+- As APIs operacionais de produtos, locais, conferentes, estoque e
+  movimentações exigem autenticação.
+- `Base.metadata.create_all()` cria tabelas ausentes na inicialização; não
+  altera o esquema de tabelas já existentes.
 
-## Primeira configuração
+## Endpoints
 
-1. Atualize o projeto e inicie o C4 no computador que hospeda a API.
-2. No próprio computador servidor, abra `http://localhost:3000`.
-3. Crie o primeiro administrador com nome, usuário e senha de pelo menos 8 caracteres.
-4. Depois disso, outros computadores/tablets da rede podem entrar com as contas criadas pelo administrador.
+| Método | Caminho | Autorização | Uso |
+|---|---|---|---|
+| `GET` | `/auth/setup-status` | Pública | Informa se a configuração inicial é necessária. |
+| `POST` | `/auth/setup-admin` | Loopback; somente antes do primeiro usuário | Cria o primeiro administrador e inicia sessão. |
+| `POST` | `/auth/login` | Pública | Autentica usuário e senha e inicia sessão. |
+| `GET` | `/auth/me` | Bearer válido | Consulta o usuário autenticado. |
+| `POST` | `/auth/logout` | Bearer válido | Invalida a sessão apresentada. |
+| `PUT` | `/auth/me/password` | Bearer válido | Altera a senha própria e revoga as sessões do usuário. |
+| `GET` | `/auth/users` | Administrador | Lista usuários; `include_inactive` é falso por padrão e `search` é opcional. |
+| `POST` | `/auth/users` | Administrador | Cria usuário com perfil `ADMIN` ou `CONFERENTE`. |
+| `PUT` | `/auth/users/{user_id}` | Administrador | Atualiza nome e/ou perfil. |
+| `POST` | `/auth/users/{user_id}/reset-password` | Administrador | Redefine a senha e revoga as sessões do usuário. |
+| `POST` | `/auth/users/{user_id}/deactivate` | Administrador | Inativa usuário e revoga suas sessões. |
+| `POST` | `/auth/users/{user_id}/activate` | Administrador | Reativa usuário; sessões anteriores não voltam a valer. |
 
-A criação inicial é bloqueada quando a chamada vem de outro dispositivo da rede. Isso evita que alguém na LAN tente registrar a primeira conta administrativa antes do responsável.
+As APIs operacionais continuam disponíveis nos caminhos existentes, mas exigem
+token bearer. A autorização administrativa das operações de usuários é aplicada
+no backend; a interface não é a única barreira.
 
-## Endpoints principais
+## Primeiro administrador
 
-- `GET /auth/setup-status`
-- `POST /auth/setup-admin` — somente loopback e somente quando ainda não há usuários.
-- `POST /auth/login`
-- `GET /auth/me`
-- `POST /auth/logout`
-- `PUT /auth/me/password`
-- `GET /auth/users?include_inactive=true` — administrador.
-- `POST /auth/users` — administrador.
-- `PUT /auth/users/{id}` — administrador.
-- `POST /auth/users/{id}/reset-password` — administrador.
-- `POST /auth/users/{id}/deactivate` e `POST /auth/users/{id}/activate` — administrador.
+1. No computador que hospeda a API, inicie o backend e o frontend.
+2. Abra `http://localhost:3000` nesse mesmo computador.
+3. Crie a primeira conta administrativa. O nome de usuário é normalizado para
+   minúsculas e a senha deve ter entre 8 e 128 caracteres.
+4. Depois da configuração, `/auth/setup-admin` passa a retornar HTTP 409.
+   Chamadas que não vêm de `127.0.0.1`, `::1` ou `localhost` são recusadas com
+   HTTP 403.
+5. Crie as demais contas pela área de usuários autenticada como administrador.
 
-## Validação manual necessária
+## Banco de dados e compatibilidade
 
-O conector GitHub não executa o projeto local nem substitui a validação com o banco real. Antes de incorporar esta etapa à versão principal, validar no computador do projeto:
+O banco configurado por padrão é `backend/data/c4gestao.db`, podendo ser
+substituído por `C4_DATABASE_URL`. A inspeção não mutável do banco local
+encontrou as nove tabelas esperadas, incluindo `users` e `auth_sessions`, sem
+tabelas ausentes e com chaves estrangeiras habilitadas. Na inspeção, as tabelas
+de autenticação não continham usuários nem sessões.
 
-1. `npm run lint`
-2. Iniciar a API e confirmar `http://localhost:8000/health`.
-3. Abrir `http://localhost:3000` no computador servidor e criar o primeiro administrador.
-4. Tentar abrir `http://localhost:8000/products` sem token e confirmar HTTP 401.
-5. Entrar como administrador e criar um usuário Conferente.
-6. Entrar como Conferente e confirmar que a aba Configurações não libera acesso.
-7. Confirmar que operações de consulta/estoque continuam funcionando após login.
-8. Inativar o Conferente e confirmar que a próxima tentativa de login é recusada.
-9. Confirmar que o sistema não permite inativar o último administrador ativo.
+Os testes usam bancos SQLite temporários criados em diretórios temporários e
+removidos ao final. Nenhum usuário, sessão ou dado operacional foi criado no
+banco local do projeto. `create_all()` cria tabelas ausentes, mas não é uma
+ferramenta de migração para alterações futuras em tabelas antigas.
+
+## Iniciar e validar localmente
+
+Execute a partir da raiz do repositório.
+
+Backend:
+
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
+```
+
+Frontend, em outro terminal:
+
+```powershell
+npm run dev
+```
+
+URLs de validação:
+
+- `http://127.0.0.1:8000/`
+- `http://127.0.0.1:8000/openapi.json`
+- `http://127.0.0.1:8000/auth/setup-status`
+- `http://127.0.0.1:3000/`
+
+Se a porta 8000 já estiver ocupada, identifique o processo e confirme seu
+executável/comando antes de encerrá-lo:
+
+```powershell
+$listeners = Get-NetTCPConnection -LocalPort 8000 -State Listen
+$listeners | ForEach-Object {
+  Get-CimInstance Win32_Process -Filter "ProcessId = $($_.OwningProcess)"
+}
+```
+
+Encerre somente o PID confirmado como a instância que deseja substituir (ou
+interrompa-a pelo terminal em que foi iniciada) e então execute o comando do
+backend acima. Se usar `Stop-Process`, informe o PID numérico confirmado.
+Não finalize processos por nome nem encerre uma instância sem confirmar sua
+origem.
+
+## Testes automatizados
+
+Instale as dependências de runtime e teste a partir da raiz:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt -r backend\requirements-test.txt
+.\.venv\Scripts\python.exe -m pytest -q
+```
+
+A suíte em `backend/tests/test_auth_api.py` usa SQLite temporário e cobre estado
+inicial, criação e bloqueio de segundo administrador, restrição local,
+credenciais válidas/inválidas, usuário inativo, consulta autenticada, token
+ausente/inválido, autorização administrativa, CRUD, unicidade, ativação,
+desativação, redefinição e alteração de senha, último administrador, logout,
+hash de tokens e proteção/regressão das rotas operacionais.
+
+Resultados obtidos nesta execução:
+
+- `python -m pytest -q`: **15 testes aprovados**, 16 subtestes aprovados; um
+  aviso de depreciação de `anyio` vindo do `TestClient`/Starlette.
+- `python -m unittest discover -s backend\tests -q`: **15 testes aprovados**.
+- `npm run lint`: aprovado.
+- `npm run build`: aprovado; Vite emitiu um aviso de chunk
+  JavaScript maior que 500 kB.
+- Backend iniciado em uma porta livre alternativa com SQLite descartável:
+  `/`, `/openapi.json` e `/auth/setup-status` responderam corretamente; setup,
+  bloqueio do segundo administrador, login, autorização, rotas protegidas,
+  gerenciamento de usuário, logout e invalidação da sessão foram exercitados
+  em 21 verificações HTTP com os status esperados.
+
+O teste em porta alternativa valida o código atual, mas não substitui o
+reinício controlado da instância antiga que ocupa a porta 8000.
+
+## Pendências
+
+- Criar o primeiro administrador pelo navegador e validar login,
+  gerenciamento de usuários e logout no banco real (nenhum usuário foi criado
+  no banco real durante os testes; a tela de configuração inicial foi
+  verificada e está sendo exibida).
 
 ## Limite desta etapa
 
-O estoque e o histórico que ainda vivem no `localStorage` continuam locais ao navegador/dispositivo. Esta etapa autentica a aplicação e protege as APIs já existentes; não transforma automaticamente o estoque local em banco compartilhado e ainda não grava o usuário autenticado em cada movimento local. Esse vínculo será tratado na etapa de rastreabilidade/auditoria.
+Estoque e histórico que ainda vivem no `localStorage` continuam locais ao
+navegador/dispositivo. Esta etapa autentica a aplicação e protege as APIs
+existentes, mas não transforma automaticamente os dados locais em dados
+compartilhados nem associa o usuário autenticado a cada movimento local. Esse
+vínculo pertence à etapa de rastreabilidade/auditoria.

@@ -44,14 +44,14 @@ def setup_admin(payload: InitialAdminSetup, request: Request, db: Session = Depe
 def login(payload: UserCredentials, db: Session = Depends(get_db)) -> LoginResponse:
     user = db.query(User).filter(User.username == payload.username).first()
     if user is None or not user.active or not verify_password(payload.password, user.password_hash):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuário ou senha inválidos, ou usuário inativo.", headers={"WWW-Authenticate":"Bearer"})
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuário ou senha inválidos.", headers={"WWW-Authenticate":"Bearer"})
     return _create_session(db, user)
 
 @router.get("/me", response_model=UserResponse)
 def current_user(user: User = Depends(get_current_user)) -> User: return user
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-def logout(credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme), db: Session = Depends(get_db)) -> Response:
+def logout(credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme), _user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> Response:
     if credentials:
         session = db.query(AuthSession).filter(AuthSession.token_hash == hash_session_token(credentials.credentials)).first()
         if session: db.delete(session); db.commit()
