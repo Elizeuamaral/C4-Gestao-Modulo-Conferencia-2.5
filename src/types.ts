@@ -15,8 +15,9 @@ export interface StockItem {
   id: string; // Unique combination of product, lot, address, and expiry
   productCode: string;
   productName: string;
-  quantity: number;
-  receivedQuantity?: number;
+  quantity: number; // QTD. EST.: saldo atual do lote
+  receivedQuantity?: number; // QTD. CONF.: total efetivamente conferido no lote
+  invoiceQuantity?: number; // QTD. NF: total informado na nota fiscal (ausente na conferência manual)
   unit: 'FD' | 'UN' | 'CX' | 'PCT';
   lot: string;
   manufacturingDate?: string;
@@ -40,6 +41,7 @@ export interface Movement {
   productName: string;
   type: 'ENTRADA' | 'SAIDA';
   quantity: number;
+  invoiceQuantity?: number; // QTD. NF da entrada, quando informada
   unit: 'FD' | 'UN' | 'CX' | 'PCT';
   lot: string;
   manufacturingDate?: string;

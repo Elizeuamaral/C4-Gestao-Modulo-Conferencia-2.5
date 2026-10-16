@@ -448,6 +448,10 @@ export default function App() {
             ...existingItem,
             quantity: nextQuantity,
             receivedQuantity: nextReceivedQuantity,
+            invoiceQuantity:
+              typeof newMov.invoiceQuantity === 'number'
+                ? (existingItem.invoiceQuantity ?? 0) + newMov.invoiceQuantity
+                : existingItem.invoiceQuantity,
             entryMethod: existingItem.entryMethod || 'Conferencia'
           };
         } else {
@@ -457,6 +461,7 @@ export default function App() {
             productName: newMov.productName,
             quantity: newMov.quantity,
             receivedQuantity: newMov.quantity,
+            invoiceQuantity: newMov.invoiceQuantity,
             unit: normalizedUnit,
             lot: newMov.lot,
             manufacturingDate: newMov.manufacturingDate,
@@ -567,6 +572,7 @@ export default function App() {
             id: `stock-baixado-${Date.now()}`,
             quantity: safeQuantity,
             receivedQuantity: safeQuantity,
+            invoiceQuantity: undefined,
             address: 'Baixado',
             updatedAt: today,
             updateReason: 'Baixa de mercadoria',
@@ -629,6 +635,7 @@ export default function App() {
           id: `stock-transfer-${Date.now()}`,
           quantity: safeQuantity,
           receivedQuantity: safeQuantity,
+          invoiceQuantity: undefined,
           address: destination,
           expirationDate: noExpirationDate ? undefined : (expirationDate || selectedItem.expirationDate),
           noExpirationDate,

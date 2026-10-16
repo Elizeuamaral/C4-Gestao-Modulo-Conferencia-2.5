@@ -495,7 +495,9 @@ export default function InventoryScreen({
                       <th className="py-3 px-3 font-semibold">Endereço</th>
                       <th className="py-3 px-3 font-semibold">Método / Origem</th>
                       <th className="py-3 px-3 font-semibold">Situação</th>
-                      <th className="py-3 px-4 font-semibold text-right">Qtd</th>
+                      <th className="py-3 px-3 font-semibold text-right" title="Quantidade informada na nota fiscal">QTD. NF</th>
+                      <th className="py-3 px-3 font-semibold text-right" title="Quantidade efetivamente conferida">QTD. CONF.</th>
+                      <th className="py-3 px-4 font-semibold text-right" title="Saldo atual do lote">QTD. EST.</th>
                       <th className="py-3 px-3 font-semibold text-center">
                         <div className="flex items-center justify-center gap-1.5">
                           <span>Ações</span>
@@ -596,11 +598,26 @@ export default function InventoryScreen({
                               {warningText}
                             </span>
                           </td>
-                          <td className="py-3 px-4 text-right font-bold font-mono text-sm whitespace-nowrap text-slate-800">
-                            <div>{item.quantity} {item.unit}</div>
-                            <div className="text-[10px] text-slate-400 font-medium">
-                              {item.receivedQuantity && item.receivedQuantity !== item.quantity ? `${item.receivedQuantity} recebidos` : 'Total ativo'}
-                            </div>
+                          <td id={`stock-qty-nf-${item.id}`} className="py-3 px-3 text-right font-mono text-sm whitespace-nowrap text-slate-600">
+                            {typeof item.invoiceQuantity === 'number' ? `${item.invoiceQuantity} ${item.unit}` : '-'}
+                          </td>
+                          <td id={`stock-qty-conf-${item.id}`} className="py-3 px-3 text-right font-mono text-sm whitespace-nowrap text-slate-600">
+                            {item.entryMethod !== 'Importação' && typeof item.receivedQuantity === 'number' ? (
+                              <>
+                                {item.receivedQuantity} {item.unit}
+                                {typeof item.invoiceQuantity === 'number' && item.receivedQuantity !== item.invoiceQuantity && (
+                                  <div className="text-[10px] font-bold text-amber-600">
+                                    Divergência {item.receivedQuantity - item.invoiceQuantity > 0 ? '+' : ''}
+                                    {item.receivedQuantity - item.invoiceQuantity}
+                                  </div>
+                                )}
+                              </>
+                            ) : (
+                              '-'
+                            )}
+                          </td>
+                          <td id={`stock-qty-est-${item.id}`} className="py-3 px-4 text-right font-bold font-mono text-sm whitespace-nowrap text-slate-800">
+                            {item.quantity} {item.unit}
                           </td>
                           <td className="py-3 px-3 text-center whitespace-nowrap">
                             <div className="flex items-center justify-center gap-1">
