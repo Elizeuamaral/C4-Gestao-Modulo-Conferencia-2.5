@@ -6,7 +6,8 @@
 import React, { useState } from 'react';
 import * as XLSX from 'xlsx';
 import { Product, StockItem, Movement, AppSettings } from '../types';
-import { formatDateDisplay, DATABASE_EXPORT_HEADERS } from '../utils/stockTemplate';
+import { formatDateDisplay, DATABASE_EXPORT_HEADERS, buildStockExportRow } from '../utils/stockTemplate';
+import { getHistoricalQuantities } from '../utils/stockRules';
 import { playSuccessBeep } from '../utils/audio';
 import { 
   Search, 
@@ -329,24 +330,7 @@ export default function InventoryScreen({
   const exportToExcelOrCSV = () => {
     const wb = XLSX.utils.book_new();
     const headers = [...DATABASE_EXPORT_HEADERS];
-    const rows = filteredStock.map(item => [
-      item.productCode,
-      item.productName,
-      item.quantity,
-      item.unit,
-      item.lot,
-      formatDateDisplay(item.manufacturingDate),
-      item.noExpirationDate ? 'Sem validade' : formatDateDisplay(item.expirationDate),
-      item.address,
-      item.supplier || '',
-      item.invoiceNumber || '',
-      item.checkerName || '',
-      formatDateDisplay(item.receivedDate),
-      item.entryMethod || 'Conferencia',
-      formatDateDisplay(item.updatedAt) || '',
-      item.updatedBy || '',
-      item.updateReason || ''
-    ]);
+    const rows = filteredStock.map(buildStockExportRow);
 
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
     XLSX.utils.book_append_sheet(wb, ws, 'Estoque Atual');
@@ -599,21 +583,26 @@ export default function InventoryScreen({
                             </span>
                           </td>
                           <td id={`stock-qty-nf-${item.id}`} className="py-3 px-3 text-right font-mono text-sm whitespace-nowrap text-slate-600">
-                            {typeof item.invoiceQuantity === 'number' ? `${item.invoiceQuantity} ${item.unit}` : '-'}
+                            {typeof getHistoricalQuantities(item).invoice === 'number' ? `${item.invoiceQuantity} ${item.unit}` : '-'}
                           </td>
                           <td id={`stock-qty-conf-${item.id}`} className="py-3 px-3 text-right font-mono text-sm whitespace-nowrap text-slate-600">
-                            {item.entryMethod !== 'Importação' && typeof item.receivedQuantity === 'number' ? (
+                            {typeof getHistoricalQuantities(item).conferred === 'number' ? (
                               <>
                                 {item.receivedQuantity} {item.unit}
                                 {typeof item.invoiceQuantity === 'number' && item.receivedQuantity !== item.invoiceQuantity && (
                                   <div className="text-[10px] font-bold text-amber-600">
-                                    Divergência {item.receivedQuantity - item.invoiceQuantity > 0 ? '+' : ''}
-                                    {item.receivedQuantity - item.invoiceQuantity}
+                                    Divergência {(item.receivedQuantity as number) - item.invoiceQuantity > 0 ? '+' : ''}
+                                    {(item.receivedQuantity as number) - item.invoiceQuantity}
                                   </div>
                                 )}
                               </>
                             ) : (
-                              '-'
+                              <>
+                                -
+                                {item.originStockId && (
+                                  <div className="text-[10px] font-normal text-slate-400">Histórico no lote de origem</div>
+                                )}
+                              </>
                             )}
                           </td>
                           <td id={`stock-qty-est-${item.id}`} className="py-3 px-4 text-right font-bold font-mono text-sm whitespace-nowrap text-slate-800">
@@ -900,7 +889,7 @@ export default function InventoryScreen({
               <p className="text-[10px] font-bold uppercase tracking-wider text-indigo-600">Movimentação de estoque</p>
               <h3 className="mt-1 text-xl font-black text-slate-800">{selectedTransferItem.productName}</h3>
               <p className="text-xs text-slate-500">
-                Recebido: {selectedTransferItem.receivedQuantity ?? selectedTransferItem.quantity} {selectedTransferItem.unit} / Restante: {selectedTransferItem.quantity} {selectedTransferItem.unit}
+                Saldo disponível: {selectedTransferItem.quantity} {selectedTransferItem.unit}
               </p>
             </div>
 

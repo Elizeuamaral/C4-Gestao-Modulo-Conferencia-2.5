@@ -74,7 +74,22 @@ O estoque da interface ainda vive no `localStorage`. Campos do lote: `invoiceQua
 - **Entrada manual:** o modal de confirmação tem um campo opcional "Qtd. NF" por linha.
   Em branco, a coluna QTD. NF mostra "-" (nada é inventado). Ao somar entradas no mesmo
   lote, a NF só é somada se todas as entradas a informaram; caso contrário fica "-".
-- **Saída/transferência parcial:** os totais históricos são divididos, não duplicados. O
-  trecho movido recebe CONF. e NF iguais à quantidade movida; o registro original mantém
-  o restante, inclusive a divergência. A soma de CONF. (e de NF) entre os registros
-  resultantes é igual ao total original.
+- **Histórico preservado:** QTD. NF e QTD. CONF. são o histórico da entrada e só mudam
+  quando outra entrada é somada ao mesmo lote. Saídas, baixas e transferências nunca
+  os alteram; só QTD. EST. diminui.
+- **Saída/baixa/transferência total:** o mesmo registro muda de endereço (ou vira
+  "Baixado"), mantendo NF/CONF.
+- **Saída/baixa/transferência parcial:** o original mantém NF/CONF. e perde só saldo; o
+  trecho movido vira registro derivado (`originStockId`), que não é nova conferência nem
+  nova nota: mostra "-" em NF/CONF. com a indicação "Histórico no lote de origem".
+  Registros derivados não recebem novas entradas. Assim a soma de CONF./NF não é duplicada.
+- **Itens importados:** sem NF/CONF. ("-" na tela e vazio na exportação).
+- **Exportação Excel:** colunas `QTD. NF`, `QTD. CONF.`, `QTD. EST.` (valores vazios
+  quando não se aplicam), geradas por `buildStockExportRow` com teste de alinhamento.
+  A importação aceita `QTD. EST.` como alias de Quantidade.
+- **Limitação:** no modelo atual (um registro por lote+endereço, no `localStorage`) o
+  histórico NF/CONF. fica só no registro de origem; não é possível ver a NF/CONF. por
+  endereço. Menor alteração proposta: vincular o saldo por endereço ao lote/entrada do
+  backend (`invoice_item`/movimento de entrada), isto é, uma tabela de saldo por
+  (lote, endereço), sem alterar o histórico de entrada.
+- **Testes:** `npm run test:stock` (regras puras em `src/utils/stockRules.ts`).

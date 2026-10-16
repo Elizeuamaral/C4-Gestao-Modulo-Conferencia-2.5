@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Product, StockItem, Movement, AppSettings } from './types';
+import { applyEntryToItem, createEntryItem, isDerivedStockItem, splitStockItem } from './utils/stockRules';
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -66,7 +67,9 @@ const normalizeStockItem = (item: StockItem) => ({
   ...item,
   unit: item.unit || 'UN',
   quantity: Number(item.quantity) || 0,
-  receivedQuantity: typeof item.receivedQuantity === 'number' ? item.receivedQuantity : Number(item.quantity) || 0,
+  receivedQuantity: typeof item.receivedQuantity === 'number'
+    ? item.receivedQuantity
+    : (item.originStockId ? undefined : Number(item.quantity) || 0),
   noExpirationDate: Boolean(item.noExpirationDate),
   supplier: item.supplier || undefined,
   invoiceNumber: item.invoiceNumber || undefined,
@@ -423,23 +426,6 @@ export default function App() {
     }
   };
 
-  // Divide os totais históricos de um lote numa saída/transferência parcial sem duplicá-los:
-  // o trecho movido entra no novo registro como conferido (e, se havia NF, faturado) na própria
-  // quantidade movida; o restante, inclusive qualquer divergência, permanece no registro original.
-  const splitLotTotals = (item: StockItem, movedQuantity: number) => {
-    const received = item.receivedQuantity ?? item.quantity;
-    const movedReceived = Math.min(movedQuantity, received);
-    const hasInvoice = typeof item.invoiceQuantity === 'number';
-    const movedInvoice = hasInvoice ? Math.min(movedQuantity, item.invoiceQuantity as number) : undefined;
-    return {
-      remaining: {
-        receivedQuantity: received - movedReceived,
-        invoiceQuantity: hasInvoice ? (item.invoiceQuantity as number) - (movedInvoice as number) : undefined,
-      },
-      moved: { receivedQuantity: movedReceived, invoiceQuantity: movedInvoice },
-    };
-  };
-
   const handleAddMovement = (newMov: Omit<Movement, 'id' | 'timestamp'>) => {
     const timestamp = new Date().toISOString();
     const id = `mov-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -454,32 +440,23 @@ export default function App() {
 
       if (newMov.type === 'ENTRADA') {
         const existingItemIndex = stockCopy.findIndex(
-          (item) => matchesStockIdentity(item, movementWithMeta)
+          (item) => !isDerivedStockItem(item) && matchesStockIdentity(item, movementWithMeta)
         );
 
         if (existingItemIndex > -1) {
           const existingItem = stockCopy[existingItemIndex];
-          const nextQuantity = existingItem.quantity + newMov.quantity;
-          const nextReceivedQuantity = (existingItem.receivedQuantity ?? existingItem.quantity) + newMov.quantity;
           stockCopy[existingItemIndex] = {
-            ...existingItem,
-            quantity: nextQuantity,
-            receivedQuantity: nextReceivedQuantity,
-            // A soma só é comparável com a conferida quando todas as entradas do lote informaram a NF.
-            invoiceQuantity:
-              typeof newMov.invoiceQuantity === 'number' && typeof existingItem.invoiceQuantity === 'number'
-                ? existingItem.invoiceQuantity + newMov.invoiceQuantity
-                : undefined,
+            ...applyEntryToItem(existingItem, {
+              quantity: newMov.quantity,
+              invoiceQuantity: newMov.invoiceQuantity,
+            }),
             entryMethod: existingItem.entryMethod || 'Conferencia'
           };
         } else {
-          stockCopy.push({
+          stockCopy.push(createEntryItem({
             id: `stock-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
             productCode: newMov.productCode,
             productName: newMov.productName,
-            quantity: newMov.quantity,
-            receivedQuantity: newMov.quantity,
-            invoiceQuantity: newMov.invoiceQuantity,
             unit: normalizedUnit,
             lot: newMov.lot,
             manufacturingDate: newMov.manufacturingDate,
@@ -495,7 +472,7 @@ export default function App() {
             updatedBy: newMov.updatedBy,
             updateReason: newMov.updateReason,
             notes: newMov.notes
-          });
+          }, { quantity: newMov.quantity, invoiceQuantity: newMov.invoiceQuantity }));
         }
       }
 
@@ -579,24 +556,18 @@ export default function App() {
           });
         } else {
           // Baixa parcial: atualiza quantidade restante e cria registro baixado no banco de dados
-          const split = splitLotTotals(selectedItem, safeQuantity);
+          const { remaining, moved } = splitStockItem(
+            selectedItem,
+            safeQuantity,
+            `stock-baixado-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            { address: 'Baixado', updatedAt: today, updateReason: 'Baixa de mercadoria' }
+          );
           const updatedOriginal: StockItem = {
-            ...selectedItem,
-            ...split.remaining,
-            quantity: selectedItem.quantity - safeQuantity,
+            ...remaining,
             updatedAt: today,
             updateReason: `Baixa parcial de ${safeQuantity} ${selectedItem.unit}`,
           };
-          const baixadoItem: StockItem = {
-            ...selectedItem,
-            id: `stock-baixado-${Date.now()}`,
-            quantity: safeQuantity,
-            ...split.moved,
-            address: 'Baixado',
-            updatedAt: today,
-            updateReason: 'Baixa de mercadoria',
-          };
-          return prevStock.map((item) => (item.id === itemId ? updatedOriginal : item)).concat(baixadoItem);
+          return prevStock.map((item) => (item.id === itemId ? updatedOriginal : item)).concat(moved);
         }
       });
 
@@ -643,25 +614,24 @@ export default function App() {
           };
         });
       } else {
-        const split = splitLotTotals(selectedItem, safeQuantity);
+        const { remaining, moved } = splitStockItem(
+          selectedItem,
+          safeQuantity,
+          `stock-transfer-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          {
+            address: destination,
+            expirationDate: noExpirationDate ? undefined : (expirationDate || selectedItem.expirationDate),
+            noExpirationDate,
+            updatedAt: today,
+            updateReason: `Transferido de ${selectedItem.address}`,
+          }
+        );
         const remainingItem: StockItem = {
-          ...selectedItem,
-          ...split.remaining,
-          quantity: selectedItem.quantity - safeQuantity,
+          ...remaining,
           updatedAt: today,
           updateReason: `Transferência parcial para ${destination}`,
         };
-        const transferredItem: StockItem = {
-          ...selectedItem,
-          id: `stock-transfer-${Date.now()}`,
-          quantity: safeQuantity,
-          ...split.moved,
-          address: destination,
-          expirationDate: noExpirationDate ? undefined : (expirationDate || selectedItem.expirationDate),
-          noExpirationDate,
-          updatedAt: today,
-          updateReason: `Transferido de ${selectedItem.address}`,
-        };
+        const transferredItem: StockItem = moved;
         return prevStock.map((item) => (item.id === itemId ? remainingItem : item)).concat(transferredItem);
       }
     });

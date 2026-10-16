@@ -1,3 +1,6 @@
+import type { StockItem } from '../types';
+import { getHistoricalQuantities } from './stockRules';
+
 export const STOCK_TEMPLATE_HEADERS = [
   'Codigo de barra',
   'Descricao',
@@ -12,7 +15,9 @@ export const STOCK_TEMPLATE_HEADERS = [
 export const DATABASE_EXPORT_HEADERS = [
   'Codigo de barra',
   'Descricao',
-  'Quantidade',
+  'QTD. NF',
+  'QTD. CONF.',
+  'QTD. EST.',
   'Unidade',
   'Lote',
   'Fabricacao',
@@ -49,6 +54,30 @@ export const formatDateDisplay = (dateString?: string, noExpirationDate?: boolea
   }
 };
 
+export const buildStockExportRow = (item: StockItem): (string | number)[] => {
+  const history = getHistoricalQuantities(item);
+  return [
+    item.productCode,
+    item.productName,
+    history.invoice ?? '',
+    history.conferred ?? '',
+    item.quantity,
+    item.unit,
+    item.lot,
+    formatDateDisplay(item.manufacturingDate),
+    item.noExpirationDate ? 'Sem validade' : formatDateDisplay(item.expirationDate),
+    item.address,
+    item.supplier || '',
+    item.invoiceNumber || '',
+    item.checkerName || '',
+    formatDateDisplay(item.receivedDate),
+    item.entryMethod || 'Conferencia',
+    formatDateDisplay(item.updatedAt) || '',
+    item.updatedBy || '',
+    item.updateReason || '',
+  ];
+};
+
 export const MOVEMENT_EXPORT_HEADERS = [
   ...STOCK_TEMPLATE_HEADERS,
 ] as const;
@@ -60,6 +89,6 @@ export const STOCK_TEMPLATE_ALIASES: Record<(typeof STOCK_TEMPLATE_HEADERS)[numb
   Fabricacao: ['Fabricacao', 'Data Fabricacao'],
   Vencimento: ['Vencimento', 'Validade', 'Data Validade'],
   Endereco: ['Endereco', 'Local', 'Localizacao'],
-  Quantidade: ['Quantidade', 'Qtd', 'Estoque', 'Saldo'],
+  Quantidade: ['Quantidade', 'Qtd', 'Estoque', 'Saldo', 'QTD. EST.'],
   'Un. Medida': ['Un. Medida', 'Unidade', 'Un', 'UM'],
 };
