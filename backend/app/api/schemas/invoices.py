@@ -45,6 +45,12 @@ class InvoiceCreate(_Strip):
     items: list[InvoiceItemCreate] = Field(min_length=1)
 
 
+class NFeLookupRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    access_key: str = Field(min_length=1, max_length=100)
+
+
 class ConferItemRequest(_Strip):
     model_config = ConfigDict(extra="forbid")
 

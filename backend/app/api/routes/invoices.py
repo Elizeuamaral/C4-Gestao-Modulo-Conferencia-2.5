@@ -12,6 +12,7 @@ from backend.app.api.schemas.invoices import (
     InvoiceItemResponse,
     InvoiceListResponse,
     InvoiceResponse,
+    NFeLookupRequest,
 )
 from backend.app.db.database import get_db
 from backend.app.db.models import User
@@ -24,6 +25,16 @@ from backend.app.services.invoices import (
     get_invoice,
     list_invoices,
 )
+from backend.app.services.nfe.key import InvalidAccessKeyError
+from backend.app.services.nfe.lookup import lookup_invoice_by_key
+from backend.app.services.nfe.providers import (
+    NFeNotFoundError,
+    NFeProvider,
+    NFeProviderNotConfiguredError,
+    NFeProviderUnavailableError,
+    get_nfe_provider,
+)
+from backend.app.services.nfe.xml_parser import NFeParseError
 
 router = APIRouter(prefix="/invoices", tags=["invoices"])
 
@@ -46,6 +57,33 @@ def create_invoice_endpoint(
         return create_invoice(db, payload, current_user.id)
     except (InvoiceConflictError, InvoiceValidationError) as exc:
         _raise(exc)
+
+
+@router.post("/lookup", response_model=InvoiceResponse)
+def lookup_invoice_endpoint(
+    payload: NFeLookupRequest,
+    response: Response,
+    db: Session = Depends(get_db),
+    provider: NFeProvider = Depends(get_nfe_provider),
+    current_user: User = Depends(get_current_user),
+) -> InvoiceResponse:
+    """Load an NF-e by access key: 201 when newly registered, 200 when already registered."""
+    try:
+        invoice, created = lookup_invoice_by_key(db, payload.access_key, provider, current_user.id)
+    except InvalidAccessKeyError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    except NFeNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    except NFeProviderNotConfiguredError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
+    except NFeProviderUnavailableError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
+    except NFeParseError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"XML da NF-e não pôde ser processado: {exc}") from exc
+    except (InvoiceConflictError, InvoiceValidationError) as exc:
+        _raise(exc)
+    response.status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
+    return invoice
 
 
 @router.get("", response_model=InvoiceListResponse)
