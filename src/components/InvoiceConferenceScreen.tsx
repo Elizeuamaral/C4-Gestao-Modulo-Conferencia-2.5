@@ -145,7 +145,7 @@ export default function InvoiceConferenceScreen({ currentUserRole }: Props) {
     } finally { setBusy(false); }
   };
 
-  const productByCode = new Map(products.map((product) => [product.code.trim().toUpperCase(), product]));
+  const productByCode = new Map<string, ApiProduct>(products.map((product): [string, ApiProduct] => [product.code.trim().toUpperCase(), product]));
 
   return (
     <section className="max-w-5xl mx-auto px-4 space-y-4">
