@@ -49,7 +49,7 @@ def _frontend_dist_directory() -> Path | None:
     bundle_root = Path(getattr(__import__("sys"), "_MEIPASS", Path(__file__).resolve().parents[2]))
     candidates = [
         bundle_root / "frontend" / "dist",
-        Path(__file__).resolve().parents[3] / "dist",
+        Path(__file__).resolve().parents[2] / "dist",
     ]
     return next((path for path in candidates if (path / "index.html").is_file()), None)
 
