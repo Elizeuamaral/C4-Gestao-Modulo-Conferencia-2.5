@@ -1,15 +1,19 @@
 """FastAPI application entry point for C4 Gestão.
 
-C4-API-004 adds location and checker domain routes while preserving the
-validated C4-API-002 health and C4-API-003 product routes.
+The packaged desktop build can serve the compiled frontend from the same local
+process. Development continues to use the Vite development server as before.
 """
 
 from __future__ import annotations
 
+import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from backend.app.api.dependencies import get_current_user
 from backend.app.api.routes.auth import router as auth_router
@@ -28,14 +32,30 @@ from backend.app.db.models import Base
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    """Create newly introduced tables without altering existing tables."""
+    """Initialize schema and apply safe schema upgrades on startup."""
     Base.metadata.create_all(bind=engine)
     apply_schema_upgrades(engine)
     yield
 
 
+def _frontend_dist_directory() -> Path | None:
+    """Resolve a built frontend directory when desktop packaging enables it."""
+    configured = os.getenv("C4_FRONTEND_DIST")
+    if configured:
+        candidate = Path(configured).expanduser().resolve()
+        return candidate if (candidate / "index.html").is_file() else None
+
+    # PyInstaller one-folder/one-file bundles expose bundled data under _MEIPASS.
+    bundle_root = Path(getattr(__import__("sys"), "_MEIPASS", Path(__file__).resolve().parents[2]))
+    candidates = [
+        bundle_root / "frontend" / "dist",
+        Path(__file__).resolve().parents[3] / "dist",
+    ]
+    return next((path for path in candidates if (path / "index.html").is_file()), None)
+
+
 def create_app() -> FastAPI:
-    """Create and configure the C4 Gestão FastAPI application."""
+    """Create and configure the C4 Gestão application."""
     app = FastAPI(
         lifespan=lifespan,
         title=settings.app_name,
@@ -53,8 +73,11 @@ def create_app() -> FastAPI:
     )
 
     @app.get("/", tags=["system"])
-    def root() -> dict[str, str]:
-        """Return basic API metadata."""
+    def root():
+        """Serve the app home when packaged, or API metadata during development."""
+        frontend = _frontend_dist_directory()
+        if frontend:
+            return FileResponse(frontend / "index.html")
         return {
             "name": settings.app_name,
             "version": settings.app_version,
@@ -63,7 +86,6 @@ def create_app() -> FastAPI:
 
     app.include_router(health_router)
     app.include_router(auth_router)
-    # Operational APIs require an active login. The health endpoint remains public.
     protected = [Depends(get_current_user)]
     app.include_router(products_router, dependencies=protected)
     app.include_router(locations_router, dependencies=protected)
@@ -71,6 +93,19 @@ def create_app() -> FastAPI:
     app.include_router(stock_router, dependencies=protected)
     app.include_router(movements_router, dependencies=protected)
     app.include_router(invoices_router, dependencies=protected)
+
+    frontend = _frontend_dist_directory()
+    if frontend:
+        # API routes are registered first; remaining paths are frontend assets.
+        app.mount("/assets", StaticFiles(directory=frontend / "assets"), name="frontend-assets")
+
+        @app.get("/{frontend_path:path}", include_in_schema=False)
+        def frontend_route(frontend_path: str):
+            """Return built assets or index.html for client-side navigation."""
+            candidate = (frontend / frontend_path).resolve()
+            if candidate.is_relative_to(frontend.resolve()) and candidate.is_file():
+                return FileResponse(candidate)
+            return FileResponse(frontend / "index.html")
 
     return app
 
@@ -83,7 +118,7 @@ if __name__ == "__main__":
 
     uvicorn.run(
         "backend.app.main:app",
-        host=settings.api_host,
+        host="127.0.0.1" if _frontend_dist_directory() else settings.api_host,
         port=settings.api_port,
         reload=False,
     )
