@@ -1,0 +1,212 @@
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  ApiInvoice,
+  ApiLocation,
+  ApiProduct,
+  createInvoiceFromXml,
+  listInvoices,
+  listLocations,
+  listProducts,
+  conferInvoiceItem,
+} from '../services/api';
+
+type Props = { currentUserRole: 'ADMIN' | 'CONFERENTE' };
+
+function readText(parent: Element | null, name: string): string {
+  if (!parent) return '';
+  const element = Array.from(parent.children).find((child) => child.localName === name);
+  return element?.textContent?.trim() || '';
+}
+
+function parseXml(fileText: string) {
+  const xml = new DOMParser().parseFromString(fileText, 'application/xml');
+  if (xml.querySelector('parsererror')) throw new Error('O arquivo selecionado não é um XML válido.');
+  const inf = Array.from(xml.getElementsByTagName('*')).find((element) => element.localName === 'infNFe');
+  if (!inf) throw new Error('O XML não contém uma NF-e (infNFe).');
+  const key = (inf.getAttribute('Id') || '').replace(/^NFe/, '');
+  if (!/^\d{44}$/.test(key)) throw new Error('O XML não contém uma chave de acesso de 44 dígitos.');
+  const ide = Array.from(inf.children).find((element) => element.localName === 'ide') || null;
+  const emit = Array.from(inf.children).find((element) => element.localName === 'emit') || null;
+  const dets = Array.from(inf.children).filter((element) => element.localName === 'det');
+  const units: Record<string, string> = {
+    UN: 'UN', UND: 'UN', UNID: 'UN', UNIDADE: 'UN',
+    CX: 'CX', CXA: 'CX', CAIXA: 'CX',
+    FD: 'FD', FARDO: 'FD',
+    PCT: 'PCT', PC: 'PCT', PACOTE: 'PCT',
+  };
+  const items = dets.map((det, index) => {
+    const prod = Array.from(det.children).find((element) => element.localName === 'prod') || null;
+    const code = readText(prod, 'cProd');
+    const rawUnit = readText(prod, 'uCom').toUpperCase();
+    const unit = units[rawUnit];
+    const quantity = Number(readText(prod, 'qCom'));
+    if (!code) throw new Error(`Item ${index + 1}: código de produto ausente no XML.`);
+    if (!unit) throw new Error(`Item ${index + 1}: unidade "${rawUnit || '?'}" não suportada. Use FD, UN, CX ou PCT.`);
+    if (!Number.isFinite(quantity) || quantity < 0) throw new Error(`Item ${index + 1}: quantidade inválida.`);
+    return {
+      product_code: code,
+      product_description: readText(prod, 'xProd') || code,
+      unit,
+      invoice_quantity: quantity,
+      invoice_lot: null,
+      invoice_expiration_date: null,
+      notes: null,
+    };
+  });
+  if (!items.length) throw new Error('A NF-e não possui itens para conferência.');
+  return {
+    number: readText(ide, 'nNF'),
+    series: readText(ide, 'serie') || null,
+    access_key: key,
+    supplier: readText(emit, 'xNome') || null,
+    received_date: new Date().toISOString().slice(0, 10),
+    notes: 'Importada de XML local. Não houve consulta automática à SEFAZ.',
+    items,
+  };
+}
+
+export default function InvoiceConferenceScreen({ currentUserRole }: Props) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [invoices, setInvoices] = useState<ApiInvoice[]>([]);
+  const [locations, setLocations] = useState<ApiLocation[]>([]);
+  const [products, setProducts] = useState<ApiProduct[]>([]);
+  const [selectedId, setSelectedId] = useState('');
+  const [quantities, setQuantities] = useState<Record<string, string>>({});
+  const [locationId, setLocationId] = useState('');
+  const [lot, setLot] = useState('');
+  const [expirationDate, setExpirationDate] = useState('');
+  const [noExpirationDate, setNoExpirationDate] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+
+  const refresh = async (preferredId?: string) => {
+    const [nextInvoices, nextLocations, nextProducts] = await Promise.all([
+      listInvoices(), listLocations(), listProducts(),
+    ]);
+    setInvoices(nextInvoices);
+    setLocations(nextLocations);
+    setProducts(nextProducts);
+    const nextId = preferredId || selectedId || nextInvoices[0]?.id || '';
+    setSelectedId(nextId);
+    if (!locationId && nextLocations[0]) setLocationId(nextLocations[0].id);
+  };
+
+  useEffect(() => {
+    refresh().catch((reason) => setError(reason instanceof Error ? reason.message : 'Falha ao carregar NF-e.'));
+    // Initial load only; refresh is called explicitly after mutations.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const selected = invoices.find((invoice) => invoice.id === selectedId) || null;
+
+  const importXml = async (file?: File) => {
+    if (!file) return;
+    setBusy(true); setError(''); setMessage('');
+    try {
+      if (file.size > 5 * 1024 * 1024) throw new Error('O XML excede o limite de 5 MB.');
+      const parsed = parseXml(await file.text());
+      const created = await createInvoiceFromXml(parsed);
+      await refresh(created.id);
+      setMessage('XML importado e registrado para conferência. A chave foi lida do arquivo; não foi feita consulta à SEFAZ.');
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível importar o XML.');
+    } finally {
+      setBusy(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  };
+
+  const confer = async (item: ApiInvoice['items'][number]) => {
+    if (!selected || !locationId) { setError('Cadastre/ative um local de estoque antes de conferir.'); return; }
+    const raw = quantities[item.id] ?? String(item.invoice_quantity);
+    const quantity = Number(raw);
+    if (!Number.isFinite(quantity) || quantity < 0) { setError('Informe uma quantidade conferida válida.'); return; }
+    setBusy(true); setError(''); setMessage('');
+    try {
+      await conferInvoiceItem(selected.id, item.id, {
+        conferred_quantity: quantity,
+        location_id: locationId,
+        lot: lot.trim() || null,
+        expiration_date: noExpirationDate ? null : (expirationDate || null),
+        no_expiration_date: noExpirationDate,
+        notes: null,
+      });
+      await refresh(selected.id);
+      setMessage('Item conferido. O backend protege contra lançamento duplicado do mesmo item.');
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Falha ao conferir o item.');
+    } finally { setBusy(false); }
+  };
+
+  const productByCode = new Map(products.map((product) => [product.code.trim().toUpperCase(), product]));
+
+  return (
+    <section className="max-w-5xl mx-auto px-4 space-y-4">
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 className="text-lg font-black text-slate-900">Conferência de NF-e (XML)</h2>
+        <p className="mt-1 text-sm text-slate-600">Importe o XML autorizado recebido da loja/fornecedor. Informar apenas a chave não baixa o XML nem consulta a SEFAZ.</p>
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <input ref={fileRef} type="file" accept=".xml,text/xml,application/xml" disabled={busy} onChange={(event) => importXml(event.target.files?.[0])} className="block max-w-full text-sm" />
+          <button type="button" disabled={busy} onClick={() => refresh().catch((reason) => setError(String(reason)))} className="rounded-xl border px-4 py-2 text-sm font-bold disabled:opacity-50">Atualizar notas</button>
+        </div>
+        {message && <p role="status" className="mt-3 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{message}</p>}
+        {error && <p role="alert" className="mt-3 rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}
+      </div>
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <label className="block text-sm font-bold text-slate-700">Notas registradas</label>
+        <select value={selectedId} onChange={(event) => setSelectedId(event.target.value)} className="mt-2 w-full rounded-xl border border-slate-300 p-3 text-sm">
+          <option value="">Selecione uma NF-e</option>
+          {invoices.map((invoice) => <option key={invoice.id} value={invoice.id}>NF {invoice.number}{invoice.series ? ` · Série ${invoice.series}` : ''} · {invoice.supplier || 'Fornecedor não identificado'} · {invoice.status}</option>)}
+        </select>
+        {selected && <>
+          <div className="mt-4 grid gap-2 rounded-xl bg-slate-50 p-4 text-sm sm:grid-cols-2">
+            <p><strong>Nota:</strong> {selected.number} {selected.series ? `/ Série ${selected.series}` : ''}</p>
+            <p><strong>Fornecedor:</strong> {selected.supplier || 'Não identificado'}</p>
+            <p className="sm:col-span-2 break-all"><strong>Chave:</strong> {selected.access_key || 'Não informada'}</p>
+            <p><strong>Status:</strong> {selected.status}</p>
+            <p><strong>Itens:</strong> {selected.items.length}</p>
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <label className="text-sm font-semibold">Local de estoque
+              <select value={locationId} onChange={(event) => setLocationId(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 p-2.5" disabled={!locations.length}>
+                <option value="">Selecione local</option>
+                {locations.map((location) => <option key={location.id} value={location.id}>{location.code} — {location.name}</option>)}
+              </select>
+            </label>
+            <label className="text-sm font-semibold">Lote recebido (opcional)
+              <input value={lot} onChange={(event) => setLot(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 p-2.5" />
+            </label>
+            <label className="text-sm font-semibold">Validade (se aplicável)
+              <input type="date" value={expirationDate} onChange={(event) => { setExpirationDate(event.target.value); setNoExpirationDate(!event.target.value); }} className="mt-1 w-full rounded-xl border border-slate-300 p-2.5" disabled={noExpirationDate} />
+            </label>
+            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={noExpirationDate} onChange={(event) => setNoExpirationDate(event.target.checked)} /> Produto sem controle de validade</label>
+          </div>
+          <div className="mt-4 space-y-3">
+            {selected.items.map((item) => {
+              const product = productByCode.get(item.product_code.trim().toUpperCase());
+              const divergence = item.conferred_quantity !== null && Math.abs(item.conferred_quantity - item.invoice_quantity) > 0.000001;
+              return <article key={item.id} className="rounded-xl border border-slate-200 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div><p className="font-bold text-slate-900">{item.product_description || item.product_code}</p><p className="text-xs text-slate-500">Código NF: {item.product_code} · Unidade {item.unit}</p><p className="text-xs">{product ? `Produto cadastrado: ${product.name}` : 'Produto ainda não localizado na base pelo código.'}</p></div>
+                  <span className={divergence ? 'rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800' : 'rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700'}>{item.status === 'PENDENTE' ? 'Pendente' : divergence ? 'Divergência' : 'Conferido'}</span>
+                </div>
+                <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                  <p className="text-sm"><strong>Qtd. NF:</strong> {item.invoice_quantity}</p>
+                  <label className="text-sm font-semibold">Qtd. conferida
+                    <input type="number" min="0" step="any" value={quantities[item.id] ?? String(item.conferred_quantity ?? item.invoice_quantity)} onChange={(event) => setQuantities((previous) => ({ ...previous, [item.id]: event.target.value }))} disabled={item.status !== 'PENDENTE'} className="mt-1 w-full rounded-lg border border-slate-300 p-2" />
+                  </label>
+                  <div className="flex items-end"><button type="button" disabled={busy || item.status !== 'PENDENTE' || !product} onClick={() => confer(item)} className="w-full rounded-xl bg-indigo-600 px-3 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40">{item.status === 'PENDENTE' ? 'Conferir e lançar estoque' : 'Já conferido'}</button></div>
+                </div>
+                {divergence && <p className="mt-2 text-sm font-semibold text-amber-800">Diferença registrada: {(item.conferred_quantity! - item.invoice_quantity).toLocaleString('pt-BR')}</p>}
+                {item.current_stock_quantity !== null && <p className="mt-1 text-xs text-slate-500">Saldo atual do lote: {item.current_stock_quantity}</p>}
+              </article>;
+            })}
+          </div>
+        </>}
+      </div>
+      <p className="text-xs text-slate-500">Acesso atual: {currentUserRole}. As operações são enviadas à API autenticada; a conferência idêntica repetida não deve gerar uma nova entrada.</p>
+    </section>
+  );
+}
