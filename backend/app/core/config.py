@@ -34,6 +34,10 @@ class Settings(BaseSettings):
         validation_alias="C4_CORS_ORIGIN_REGEX",
     )
 
+    # NF-e lookup provider: "none" (default) or "xml_dir" (reads <chave>.xml files).
+    nfe_provider: str = Field(default="none", validation_alias="C4_NFE_PROVIDER")
+    nfe_xml_dir: str = Field(default="", validation_alias="C4_NFE_XML_DIR")
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

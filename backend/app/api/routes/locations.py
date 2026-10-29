@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from backend.app.api.dependencies import require_admin
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -25,7 +26,7 @@ from backend.app.services.locations import (
 router = APIRouter(prefix="/locations", tags=["locations"])
 
 
-@router.post("", response_model=LocationResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=LocationResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_admin)])
 def create_location_endpoint(
     payload: LocationCreate,
     db: Session = Depends(get_db),
@@ -92,7 +93,7 @@ def get_location_endpoint(
     return location
 
 
-@router.put("/{location_id}", response_model=LocationResponse)
+@router.put("/{location_id}", response_model=LocationResponse, dependencies=[Depends(require_admin)])
 def update_location_endpoint(
     location_id: str,
     payload: LocationUpdate,
@@ -120,7 +121,7 @@ def update_location_endpoint(
         ) from exc
 
 
-@router.delete("/{location_id}", response_model=LocationResponse)
+@router.delete("/{location_id}", response_model=LocationResponse, dependencies=[Depends(require_admin)])
 def deactivate_location_endpoint(
     location_id: str,
     db: Session = Depends(get_db),

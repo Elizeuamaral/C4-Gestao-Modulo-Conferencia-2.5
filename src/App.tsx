@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Product, StockItem, Movement, AppSettings } from './types';
+import { applyEntryToItem, createEntryItem, isDerivedStockItem, splitStockItem } from './utils/stockRules';
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -18,9 +19,10 @@ import {
 import MovementScreen from './components/MovementScreen';
 import InventoryScreen from './components/InventoryScreen';
 import SettingsScreen from './components/SettingsScreen';
+import LoginScreen from './components/LoginScreen';
 import { loadStoredSettings } from './utils/settings';
 import { playSuccessBeep, playErrorBuzzer } from './utils/audio';
-import { createProduct, deactivateProduct, listAllProducts, listProducts, updateProduct } from './services/api';
+import { ApiUser, AUTH_EXPIRED_EVENT, clearAuthToken, createProduct, deactivateProduct, getAuthToken, getCurrentUser, listAllProducts, listProducts, logoutUser, setAuthToken as storeAuthToken, updateProduct } from './services/api';
 import {
   ClipboardList,
   Archive,
@@ -30,7 +32,8 @@ import {
   Lock,
   Eye,
   EyeOff,
-  X
+  X,
+  LogOut
 } from 'lucide-react';
 
 const APP_VERSION = '2.5.0';
@@ -64,7 +67,9 @@ const normalizeStockItem = (item: StockItem) => ({
   ...item,
   unit: item.unit || 'UN',
   quantity: Number(item.quantity) || 0,
-  receivedQuantity: typeof item.receivedQuantity === 'number' ? item.receivedQuantity : Number(item.quantity) || 0,
+  receivedQuantity: typeof item.receivedQuantity === 'number'
+    ? item.receivedQuantity
+    : (item.originStockId ? undefined : Number(item.quantity) || 0),
   noExpirationDate: Boolean(item.noExpirationDate),
   supplier: item.supplier || undefined,
   invoiceNumber: item.invoiceNumber || undefined,
@@ -95,6 +100,9 @@ const normalizeMovement = (movement: Movement) => ({
 export default function App() {
   const [activeScreen, setActiveScreen] = useState<'MOVIMENTACAO' | 'CONSULTA' | 'CONFIGURACAO'>('MOVIMENTACAO');
   const [settings, setSettings] = useState<AppSettings>(() => loadStoredSettings());
+  const [authToken, setAuthToken] = useState<string | null>(() => getAuthToken());
+  const [authUser, setAuthUser] = useState<ApiUser | null>(null);
+  const [authLoading, setAuthLoading] = useState<boolean>(() => Boolean(getAuthToken()));
 
   const [products, setProducts] = useState<Product[]>([]);
   const [productsLoading, setProductsLoading] = useState(true);
@@ -129,6 +137,10 @@ export default function App() {
   }, [showConfigPasswordModal]);
 
   useEffect(() => {
+    if (!authToken) {
+      setProductsLoading(false);
+      return;
+    }
     let cancelled = false;
     setProductsLoading(true);
     listProducts()
@@ -153,7 +165,43 @@ export default function App() {
         if (!cancelled) setProductsLoading(false);
       });
     return () => { cancelled = true; };
-  }, []);
+  }, [authToken]);
+
+  useEffect(() => {
+    if (!authToken) {
+      setAuthUser(null);
+      setAuthLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setAuthLoading(true);
+    getCurrentUser()
+      .then((user) => { if (!cancelled) setAuthUser(user); })
+      .catch(() => {
+        clearAuthToken();
+        if (!cancelled) { setAuthToken(null); setAuthUser(null); }
+      })
+      .finally(() => { if (!cancelled) setAuthLoading(false); });
+    return () => { cancelled = true; };
+  }, [authToken]);
+
+  // Heartbeat keeps the server-side session alive while the app is open; once the
+  // app is closed it stops and the session expires on the server.
+  useEffect(() => {
+    if (!authToken || !authUser) return;
+    const onExpired = () => {
+      clearAuthToken();
+      setAuthToken(null);
+      setAuthUser(null);
+      setActiveScreen('MOVIMENTACAO');
+    };
+    const timer = window.setInterval(() => { getCurrentUser().catch(() => undefined); }, 60_000);
+    window.addEventListener(AUTH_EXPIRED_EVENT, onExpired);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener(AUTH_EXPIRED_EVENT, onExpired);
+    };
+  }, [authToken, authUser]);
 
   useEffect(() => {
     localStorage.setItem('fast_stock_inventory', JSON.stringify(stock));
@@ -380,7 +428,7 @@ export default function App() {
 
   const handleAddMovement = (newMov: Omit<Movement, 'id' | 'timestamp'>) => {
     const timestamp = new Date().toISOString();
-    const id = `mov-${Date.now()}`;
+    const id = `mov-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const normalizedUnit: Movement['unit'] =
       newMov.unit === 'FD' || newMov.unit === 'CX' || newMov.unit === 'PCT' ? newMov.unit : 'UN';
     const movementWithMeta: Movement = { ...newMov, unit: normalizedUnit, id, timestamp };
@@ -392,26 +440,23 @@ export default function App() {
 
       if (newMov.type === 'ENTRADA') {
         const existingItemIndex = stockCopy.findIndex(
-          (item) => matchesStockIdentity(item, movementWithMeta)
+          (item) => !isDerivedStockItem(item) && matchesStockIdentity(item, movementWithMeta)
         );
 
         if (existingItemIndex > -1) {
           const existingItem = stockCopy[existingItemIndex];
-          const nextQuantity = existingItem.quantity + newMov.quantity;
-          const nextReceivedQuantity = (existingItem.receivedQuantity ?? existingItem.quantity) + newMov.quantity;
           stockCopy[existingItemIndex] = {
-            ...existingItem,
-            quantity: nextQuantity,
-            receivedQuantity: nextReceivedQuantity,
+            ...applyEntryToItem(existingItem, {
+              quantity: newMov.quantity,
+              invoiceQuantity: newMov.invoiceQuantity,
+            }),
             entryMethod: existingItem.entryMethod || 'Conferencia'
           };
         } else {
-          stockCopy.push({
-            id: `stock-${Date.now()}`,
+          stockCopy.push(createEntryItem({
+            id: `stock-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
             productCode: newMov.productCode,
             productName: newMov.productName,
-            quantity: newMov.quantity,
-            receivedQuantity: newMov.quantity,
             unit: normalizedUnit,
             lot: newMov.lot,
             manufacturingDate: newMov.manufacturingDate,
@@ -427,7 +472,7 @@ export default function App() {
             updatedBy: newMov.updatedBy,
             updateReason: newMov.updateReason,
             notes: newMov.notes
-          });
+          }, { quantity: newMov.quantity, invoiceQuantity: newMov.invoiceQuantity }));
         }
       }
 
@@ -511,22 +556,18 @@ export default function App() {
           });
         } else {
           // Baixa parcial: atualiza quantidade restante e cria registro baixado no banco de dados
+          const { remaining, moved } = splitStockItem(
+            selectedItem,
+            safeQuantity,
+            `stock-baixado-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            { address: 'Baixado', updatedAt: today, updateReason: 'Baixa de mercadoria' }
+          );
           const updatedOriginal: StockItem = {
-            ...selectedItem,
-            quantity: selectedItem.quantity - safeQuantity,
+            ...remaining,
             updatedAt: today,
             updateReason: `Baixa parcial de ${safeQuantity} ${selectedItem.unit}`,
           };
-          const baixadoItem: StockItem = {
-            ...selectedItem,
-            id: `stock-baixado-${Date.now()}`,
-            quantity: safeQuantity,
-            receivedQuantity: safeQuantity,
-            address: 'Baixado',
-            updatedAt: today,
-            updateReason: 'Baixa de mercadoria',
-          };
-          return prevStock.map((item) => (item.id === itemId ? updatedOriginal : item)).concat(baixadoItem);
+          return prevStock.map((item) => (item.id === itemId ? updatedOriginal : item)).concat(moved);
         }
       });
 
@@ -573,23 +614,24 @@ export default function App() {
           };
         });
       } else {
+        const { remaining, moved } = splitStockItem(
+          selectedItem,
+          safeQuantity,
+          `stock-transfer-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          {
+            address: destination,
+            expirationDate: noExpirationDate ? undefined : (expirationDate || selectedItem.expirationDate),
+            noExpirationDate,
+            updatedAt: today,
+            updateReason: `Transferido de ${selectedItem.address}`,
+          }
+        );
         const remainingItem: StockItem = {
-          ...selectedItem,
-          quantity: selectedItem.quantity - safeQuantity,
+          ...remaining,
           updatedAt: today,
           updateReason: `Transferência parcial para ${destination}`,
         };
-        const transferredItem: StockItem = {
-          ...selectedItem,
-          id: `stock-transfer-${Date.now()}`,
-          quantity: safeQuantity,
-          receivedQuantity: safeQuantity,
-          address: destination,
-          expirationDate: noExpirationDate ? undefined : (expirationDate || selectedItem.expirationDate),
-          noExpirationDate,
-          updatedAt: today,
-          updateReason: `Transferido de ${selectedItem.address}`,
-        };
+        const transferredItem: StockItem = moved;
         return prevStock.map((item) => (item.id === itemId ? remainingItem : item)).concat(transferredItem);
       }
     });
@@ -840,14 +882,47 @@ export default function App() {
     }
 
     if (screen === 'CONFIGURACAO') {
-      setConfigPasswordInput('');
-      setConfigPasswordError(null);
-      setShowPasswordText(false);
-      setShowConfigPasswordModal(true);
+      if (authUser?.role !== 'ADMIN') {
+        showNotification('Somente um administrador pode acessar Configurações.', 'info');
+        return;
+      }
+      setActiveScreen('CONFIGURACAO');
       return;
     }
 
     setActiveScreen(screen);
+  };
+
+  if (authLoading) {
+    return <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white">Validando sessão do C4 Gestão...</div>;
+  }
+
+  if (!authUser || !authToken) {
+    return <LoginScreen onAuthenticated={(token, user) => {
+      storeAuthToken(token);
+      setAuthToken(token);
+      setAuthUser(user);
+      setAuthLoading(false);
+    }} />;
+  }
+
+  // A 401 here also clears the session and returns the app to the login screen (see AUTH_EXPIRED_EVENT).
+  const validateSessionUser = async (): Promise<string | null> => {
+    try {
+      const user = await getCurrentUser();
+      setAuthUser(user);
+      return user.full_name;
+    } catch {
+      return null;
+    }
+  };
+
+  const handleLogout = async () => {
+    try { await logoutUser(); } catch (error) { console.warn('Não foi possível encerrar a sessão no servidor:', error); }
+    clearAuthToken();
+    setAuthToken(null);
+    setAuthUser(null);
+    setActiveScreen('MOVIMENTACAO');
   };
 
   return (
@@ -871,10 +946,11 @@ export default function App() {
                 </span>
               </div>
               <p className="text-xs text-slate-400">
-                Registro e conferência rápida de entradas de mercadorias
+                Registro e conferência rápida de entradas de mercadorias · {authUser.full_name}
               </p>
             </div>
           </div>
+          <button type="button" onClick={handleLogout} className="rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-bold text-slate-200 hover:bg-slate-700 flex items-center gap-2"><LogOut className="h-4 w-4"/>Sair</button>
         </div>
       </header>
 
@@ -951,7 +1027,7 @@ export default function App() {
               }`}
             >
               <Database className="h-4 w-4 shrink-0" />
-              <span>Banco de Dados</span>
+              <span>Configurações</span>
             </button>
           </nav>
         </div>
@@ -967,6 +1043,8 @@ export default function App() {
               scannedCode={scannedCode}
               setScannedCode={setScannedCode}
               onConferenceStateChange={setHasActiveConference}
+              currentUserName={authUser.full_name}
+              onValidateSession={validateSessionUser}
             />
           )}
 
@@ -985,6 +1063,7 @@ export default function App() {
 
           {activeScreen === 'CONFIGURACAO' && (
             <SettingsScreen
+              currentUser={authUser}
               products={products}
               settings={settings}
               onAddProduct={handleAddProduct}

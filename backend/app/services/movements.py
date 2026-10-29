@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import func, inspect as sa_inspect, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -88,9 +88,28 @@ def _apply_delta(item: StockItem, delta: float) -> None:
     item.quantity = new_quantity
 
 
+def _record_audit(db: Session, movement: Movement, user_id: str | None) -> None:
+    """Store the acting user and the balance before/after of the affected item.
+
+    Quantities come from the pending change of the stock item (SQLAlchemy
+    attribute history), so they reflect exactly what this transaction applied.
+    """
+    movement.user_id = user_id
+    for item_id in (movement.source_stock_item_id, movement.destination_stock_item_id):
+        item = db.get(StockItem, item_id) if item_id else None
+        if item is None:
+            continue
+        history = sa_inspect(item).attrs.quantity.history
+        if history.deleted:
+            movement.quantity_before = history.deleted[0]
+            movement.quantity_after = item.quantity
+            return
+
+
 def create_movement(
     db: Session,
     payload: MovementCreate,
+    user_id: str | None = None,
 ) -> tuple[Movement, bool]:
     """Record an ENTRADA, SAIDA or TRANSFERENCIA atomically.
 
@@ -212,6 +231,7 @@ def create_movement(
         notes=values.get("notes"),
         idempotency_key=values.get("idempotency_key"),
     )
+    _record_audit(db, movement, user_id)
     db.add(movement)
 
     try:
@@ -274,6 +294,7 @@ def reverse_movement(
     db: Session,
     movement_id: str,
     payload: ReverseMovementRequest,
+    user_id: str | None = None,
 ) -> tuple[Movement, bool]:
     """Reverse an ENTRADA, SAIDA or TRANSFERENCIA without changing the original."""
 
@@ -411,6 +432,7 @@ def reverse_movement(
         reversal_of_id=original.id,
         idempotency_key=values.get("idempotency_key"),
     )
+    _record_audit(db, movement, user_id)
     db.add(movement)
 
     try:
@@ -435,6 +457,7 @@ def correct_movement(
     db: Session,
     movement_id: str,
     payload: CorrectMovementRequest,
+    user_id: str | None = None,
 ) -> tuple[Movement, bool]:
     """Correct the quantity of an original movement without changing it."""
 
@@ -617,6 +640,7 @@ def correct_movement(
         correction_of_id=original.id,
         idempotency_key=values.get("idempotency_key"),
     )
+    _record_audit(db, movement, user_id)
     db.add(movement)
 
     try:

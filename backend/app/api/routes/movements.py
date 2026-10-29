@@ -14,7 +14,9 @@ from backend.app.api.schemas.movements import (
     MovementListResponse,
     MovementResponse,
 )
+from backend.app.api.dependencies import get_current_user
 from backend.app.db.database import get_db
+from backend.app.db.models import User
 from backend.app.services.movements import (
     MovementConflictError,
     MovementValidationError,
@@ -33,10 +35,11 @@ def create_movement_endpoint(
     payload: MovementCreate,
     response: Response,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> MovementResponse:
     """Record one stock movement or return an idempotent replay."""
     try:
-        movement, replayed = create_movement(db, payload)
+        movement, replayed = create_movement(db, payload, user_id=current_user.id)
     except MovementConflictError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -86,6 +89,7 @@ def list_movements_endpoint(
 def get_movement_endpoint(
     movement_id: str,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> MovementResponse:
     """Return one recorded movement."""
     movement = get_movement(db, movement_id)
@@ -107,10 +111,11 @@ def reverse_movement_endpoint(
     payload: ReverseMovementRequest,
     response: Response,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> MovementResponse:
     """Reverse one supported movement without modifying its original record."""
     try:
-        movement, replayed = reverse_movement(db, movement_id, payload)
+        movement, replayed = reverse_movement(db, movement_id, payload, user_id=current_user.id)
     except MovementConflictError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -137,10 +142,11 @@ def correct_movement_endpoint(
     payload: CorrectMovementRequest,
     response: Response,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> MovementResponse:
     """Correct one supported movement without modifying its original record."""
     try:
-        movement, replayed = correct_movement(db, movement_id, payload)
+        movement, replayed = correct_movement(db, movement_id, payload, user_id=current_user.id)
     except MovementConflictError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
