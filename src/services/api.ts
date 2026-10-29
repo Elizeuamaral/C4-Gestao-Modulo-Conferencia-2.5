@@ -237,3 +237,104 @@ export async function changeOwnPassword(currentPassword: string, newPassword: st
     method: 'PUT', body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
   });
 }
+
+
+export interface ApiLocation {
+  id: string;
+  code: string;
+  name: string;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiInvoiceItem {
+  id: string;
+  invoice_id: string;
+  line_number: number;
+  product_id: string | null;
+  product_code: string;
+  product_description: string | null;
+  unit: string;
+  invoice_quantity: number;
+  invoice_lot: string | null;
+  invoice_expiration_date: string | null;
+  status: string;
+  conferred_quantity: number | null;
+  divergence_quantity: number | null;
+  conferred_by_user_id: string | null;
+  conferred_at: string | null;
+  stock_item_id: string | null;
+  entry_movement_id: string | null;
+  current_stock_quantity: number | null;
+  notes: string | null;
+}
+
+export interface ApiInvoice {
+  id: string;
+  number: string;
+  series: string | null;
+  access_key: string | null;
+  supplier: string | null;
+  received_date: string | null;
+  status: string;
+  notes: string | null;
+  created_by_user_id: string | null;
+  conferred_by_user_id: string | null;
+  conferred_at: string | null;
+  created_at: string;
+  updated_at: string;
+  items: ApiInvoiceItem[];
+}
+
+export async function listLocations(): Promise<ApiLocation[]> {
+  const response = await request<{ items: ApiLocation[]; total: number; limit: number; offset: number }>(
+    '/locations?active=true&limit=200&offset=0',
+  );
+  return response.items;
+}
+
+export async function listInvoices(): Promise<ApiInvoice[]> {
+  const response = await request<{ items: ApiInvoice[]; total: number; limit: number; offset: number }>(
+    '/invoices?limit=200&offset=0',
+  );
+  return response.items;
+}
+
+export function createInvoiceFromXml(payload: {
+  number: string;
+  series: string | null;
+  access_key: string;
+  supplier: string | null;
+  received_date: string;
+  notes: string;
+  items: Array<{
+    product_code: string;
+    product_description: string;
+    unit: 'FD' | 'UN' | 'CX' | 'PCT';
+    invoice_quantity: number;
+    invoice_lot: string | null;
+    invoice_expiration_date: string | null;
+    notes: string | null;
+  }>;
+}): Promise<ApiInvoice> {
+  return request<ApiInvoice>('/invoices', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function conferInvoiceItem(invoiceId: string, itemId: string, payload: {
+  conferred_quantity: number;
+  location_id: string;
+  lot: string | null;
+  manufacturing_date?: string | null;
+  expiration_date: string | null;
+  no_expiration_date: boolean;
+  notes: string | null;
+}): Promise<ApiInvoiceItem> {
+  return request<ApiInvoiceItem>(`/invoices/${encodeURIComponent(invoiceId)}/items/${encodeURIComponent(itemId)}/confer`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
