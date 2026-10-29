@@ -20,6 +20,7 @@ def main() -> None:
         "--name", "C4Gestao", "--windowed", "--onedir", "--paths", ".",
         "--add-data", "dist;frontend/dist", "--collect-all", "uvicorn",
         "--collect-all", "sqlalchemy", "--collect-all", "pydantic_settings",
+        "--collect-submodules", "backend",
         "backend/desktop.py",
     ])
     print("\nPacote de teste gerado em dist/C4Gestao/C4Gestao.exe")
