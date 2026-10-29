@@ -164,7 +164,7 @@ export default function InvoiceConferenceScreen({ currentUserRole }: Props) {
         <label className="block text-sm font-bold text-slate-700">Notas registradas</label>
         <select value={selectedId} onChange={(event) => setSelectedId(event.target.value)} className="mt-2 w-full rounded-xl border border-slate-300 p-3 text-sm">
           <option value="">Selecione uma NF-e</option>
-          {invoices.map((invoice) => <option key={invoice.id} value={invoice.id}>NF {invoice.number}{invoice.series ? ` · Série ${invoice.series}` : ''} · ${invoice.supplier || 'Fornecedor não identificado'}</option>)}
+          {invoices.map((invoice) => <option key={invoice.id} value={invoice.id}>NF {invoice.number}{invoice.series ? ` · Série ${invoice.series}` : ''} · {invoice.supplier || 'Fornecedor não identificado'}</option>)}
         </select>
         {selected && <>
           <div className="mt-4 grid gap-2 rounded-xl bg-slate-50 p-4 text-sm sm:grid-cols-2">
@@ -190,15 +190,17 @@ export default function InvoiceConferenceScreen({ currentUserRole }: Props) {
                 </div>
                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
                   <label className="text-sm font-semibold">Quantidade contada
-                    <input type="number" min="0" step="any" value={quantities[item.id] ?? (item.conferred_quantity === null ? '' : String(item.conferred_quantity))} onChange={(event) => setQuantities((previous) => ({ ...previous, [item.id]: event.target.value }))} disabled={busy || alreadyConferred} className="mt-1 w-full rounded-lg border border-slate-300 p-2" placeholder="Informe a quantidade contada" />
+                    <input type="text" inputMode="numeric" pattern="[0-9]*" maxLength={10} value={quantities[item.id] ?? (item.conferred_quantity === null ? '' : String(item.conferred_quantity))} onChange={(event) => { const value = event.target.value.replace(/\D/g, '').slice(0, 10); setQuantities((previous) => ({ ...previous, [item.id]: value })); }} disabled={busy || alreadyConferred} className="mt-1 w-[10ch] max-w-full rounded-lg border border-slate-300 p-2" placeholder="0" aria-label="Quantidade inteira, até 10 dígitos" />
                   </label>
                   <label className="text-sm font-semibold">Lote
                     <input value={lots[item.id] ?? ''} onChange={(event) => setLots((previous) => ({ ...previous, [item.id]: event.target.value }))} disabled={busy || alreadyConferred} className="mt-1 w-full rounded-lg border border-slate-300 p-2" placeholder="Informe o lote deste produto" />
                   </label>
-                  <label className="text-sm font-semibold">Vencimento
-                    <input type="date" value={expirationDates[item.id] ?? ''} onChange={(event) => setExpirationDates((previous) => ({ ...previous, [item.id]: event.target.value }))} disabled={busy || alreadyConferred || noExpirationDate} className="mt-1 w-full rounded-lg border border-slate-300 p-2" />
-                  </label>
-                  <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={noExpirationDate} onChange={(event) => setNoExpirationDates((previous) => ({ ...previous, [item.id]: event.target.checked }))} disabled={busy || alreadyConferred} /> Produto sem controle de validade</label>
+                  <div className="space-y-2">
+                    <label className="block text-sm font-semibold">Vencimento
+                      <input type="date" value={expirationDates[item.id] ?? ''} onChange={(event) => setExpirationDates((previous) => ({ ...previous, [item.id]: event.target.value }))} disabled={busy || alreadyConferred || noExpirationDate} className="mt-1 block w-full rounded-lg border border-slate-300 p-2" />
+                    </label>
+                    <label className="flex items-center gap-2 text-sm font-normal"><input type="checkbox" checked={noExpirationDate} onChange={(event) => setNoExpirationDates((previous) => ({ ...previous, [item.id]: event.target.checked }))} disabled={busy || alreadyConferred} /> Produto não tem vencimento</label>
+                  </div>
                 </div>
                 <div className="mt-3">
                   <button type="button" disabled={busy || alreadyConferred || !product} onClick={() => confer(item)} className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40">{alreadyConferred ? 'Conferência registrada' : 'Registrar conferência do produto'}</button>
