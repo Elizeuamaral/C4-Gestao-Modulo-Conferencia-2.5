@@ -29,7 +29,7 @@ function parseXml(fileText: string) {
   const emit = Array.from(inf.children).find((element) => element.localName === 'emit') || null;
   const dets = Array.from(inf.children).filter((element) => element.localName === 'det');
   const units: Record<string, 'UN' | 'FD' | 'CX' | 'PCT'> = {
-    UN: 'UN', UND: 'UN', UNID: 'UN', UNIDADE: 'UNIDADE' as never,
+    UN: 'UN', UND: 'UN', UNID: 'UN', UNIDADE: 'UN',
     CX: 'CX', CXA: 'CX', CAIXA: 'CX',
     FD: 'FD', FARDO: 'FD',
     PCT: 'PCT', PC: 'PCT', PACOTE: 'PCT',
