@@ -29,7 +29,7 @@ function parseXml(fileText: string) {
   const emit = Array.from(inf.children).find((element) => element.localName === 'emit') || null;
   const dets = Array.from(inf.children).filter((element) => element.localName === 'det');
   const units: Record<string, 'UN' | 'FD' | 'CX' | 'PCT'> = {
-    UN: 'UN', UND: 'UN', UNID: 'UN', UNIDADE: 'UN',
+    UN: 'UN', UND: 'UN', UNID: 'UN', UNIDADE: 'UNIDADE' as never,
     CX: 'CX', CXA: 'CX', CAIXA: 'CX',
     FD: 'FD', FARDO: 'FD',
     PCT: 'PCT', PC: 'PCT', PACOTE: 'PCT',
@@ -72,10 +72,10 @@ export default function InvoiceConferenceScreen({ currentUserRole }: Props) {
   const [products, setProducts] = useState<ApiProduct[]>([]);
   const [selectedId, setSelectedId] = useState('');
   const [quantities, setQuantities] = useState<Record<string, string>>({});
+  const [lots, setLots] = useState<Record<string, string>>({});
+  const [expirationDates, setExpirationDates] = useState<Record<string, string>>({});
+  const [noExpirationDates, setNoExpirationDates] = useState<Record<string, boolean>>({});
   const [locationId, setLocationId] = useState('');
-  const [lot, setLot] = useState('');
-  const [expirationDate, setExpirationDate] = useState('');
-  const [noExpirationDate, setNoExpirationDate] = useState(true);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -119,21 +119,27 @@ export default function InvoiceConferenceScreen({ currentUserRole }: Props) {
 
   const confer = async (item: ApiInvoice['items'][number]) => {
     if (!selected || !locationId) { setError('Cadastre/ative um local de estoque antes de conferir.'); return; }
-    const raw = quantities[item.id] ?? String(item.invoice_quantity);
+    const raw = quantities[item.id] ?? (item.conferred_quantity === null ? '' : String(item.conferred_quantity));
+    if (raw.trim() === '') { setError('Informe a quantidade que foi contada para este produto.'); return; }
     const quantity = Number(raw);
     if (!Number.isFinite(quantity) || quantity < 0) { setError('Informe uma quantidade conferida válida.'); return; }
+    const lot = (lots[item.id] ?? '').trim();
+    const expirationDate = expirationDates[item.id] ?? '';
+    const noExpirationDate = noExpirationDates[item.id] ?? false;
+    if (!lot) { setError('Informe o lote deste produto.'); return; }
+    if (!noExpirationDate && !expirationDate) { setError('Informe o vencimento deste produto ou marque que ele não possui controle de validade.'); return; }
     setBusy(true); setError(''); setMessage('');
     try {
       await conferInvoiceItem(selected.id, item.id, {
         conferred_quantity: quantity,
         location_id: locationId,
-        lot: lot.trim() || null,
-        expiration_date: noExpirationDate ? null : (expirationDate || null),
+        lot,
+        expiration_date: noExpirationDate ? null : expirationDate,
         no_expiration_date: noExpirationDate,
         notes: null,
       });
       await refresh(selected.id);
-      setMessage('Item conferido. O backend protege contra lançamento duplicado do mesmo item.');
+      setMessage('Conferência do produto registrada.');
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Falha ao conferir o item.');
     } finally { setBusy(false); }
@@ -145,7 +151,7 @@ export default function InvoiceConferenceScreen({ currentUserRole }: Props) {
     <section className="max-w-5xl mx-auto px-4 space-y-4">
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-black text-slate-900">Conferência de NF-e (XML)</h2>
-        <p className="mt-1 text-sm text-slate-600">Importe o XML autorizado recebido da loja/fornecedor. Informar apenas a chave não baixa o XML nem consulta a SEFAZ.</p>
+        <p className="mt-1 text-sm text-slate-600">Importe o XML autorizado recebido da loja/fornecedor. A quantidade informada na nota e as divergências não são exibidas ao conferente; esses dados devem ficar restritos ao relatório autorizado.</p>
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <input ref={fileRef} type="file" accept=".xml,text/xml,application/xml" disabled={busy} onChange={(event) => importXml(event.target.files?.[0])} className="block max-w-full text-sm" />
           <button type="button" disabled={busy} onClick={() => refresh().catch((reason) => setError(String(reason)))} className="rounded-xl border px-4 py-2 text-sm font-bold disabled:opacity-50">Atualizar notas</button>
@@ -158,55 +164,51 @@ export default function InvoiceConferenceScreen({ currentUserRole }: Props) {
         <label className="block text-sm font-bold text-slate-700">Notas registradas</label>
         <select value={selectedId} onChange={(event) => setSelectedId(event.target.value)} className="mt-2 w-full rounded-xl border border-slate-300 p-3 text-sm">
           <option value="">Selecione uma NF-e</option>
-          {invoices.map((invoice) => <option key={invoice.id} value={invoice.id}>NF {invoice.number}{invoice.series ? ` · Série ${invoice.series}` : ''} · {invoice.supplier || 'Fornecedor não identificado'} · {invoice.status}</option>)}
+          {invoices.map((invoice) => <option key={invoice.id} value={invoice.id}>NF {invoice.number}{invoice.series ? ` · Série ${invoice.series}` : ''} · ${invoice.supplier || 'Fornecedor não identificado'}</option>)}
         </select>
         {selected && <>
           <div className="mt-4 grid gap-2 rounded-xl bg-slate-50 p-4 text-sm sm:grid-cols-2">
             <p><strong>Nota:</strong> {selected.number} {selected.series ? `/ Série ${selected.series}` : ''}</p>
             <p><strong>Fornecedor:</strong> {selected.supplier || 'Não identificado'}</p>
             <p className="sm:col-span-2 break-all"><strong>Chave:</strong> {selected.access_key || 'Não informada'}</p>
-            <p><strong>Status:</strong> {selected.status}</p>
-            <p><strong>Itens:</strong> {selected.items.length}</p>
+            <p><strong>Produtos:</strong> {selected.items.length}</p>
           </div>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <label className="text-sm font-semibold">Local de estoque
-              <select value={locationId} onChange={(event) => setLocationId(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 p-2.5" disabled={!locations.length}>
-                <option value="">Selecione local</option>
-                {locations.map((location) => <option key={location.id} value={location.id}>{location.code} — {location.name}</option>)}
-              </select>
-            </label>
-            <label className="text-sm font-semibold">Lote recebido (opcional)
-              <input value={lot} onChange={(event) => setLot(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 p-2.5" />
-            </label>
-            <label className="text-sm font-semibold">Validade (se aplicável)
-              <input type="date" value={expirationDate} onChange={(event) => { setExpirationDate(event.target.value); setNoExpirationDate(!event.target.value); }} className="mt-1 w-full rounded-xl border border-slate-300 p-2.5" disabled={noExpirationDate} />
-            </label>
-            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={noExpirationDate} onChange={(event) => setNoExpirationDate(event.target.checked)} /> Produto sem controle de validade</label>
-          </div>
+          <label className="mt-4 block text-sm font-semibold">Local de estoque
+            <select value={locationId} onChange={(event) => setLocationId(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 p-2.5" disabled={!locations.length}>
+              <option value="">Selecione local</option>
+              {locations.map((location) => <option key={location.id} value={location.id}>{location.code} — {location.name}</option>)}
+            </select>
+          </label>
           <div className="mt-4 space-y-3">
             {selected.items.map((item) => {
               const product = productByCode.get(item.product_code.trim().toUpperCase());
-              const divergence = item.conferred_quantity !== null && Math.abs(item.conferred_quantity - item.invoice_quantity) > 0.000001;
+              const alreadyConferred = item.status !== 'PENDENTE';
+              const noExpirationDate = noExpirationDates[item.id] ?? false;
               return <article key={item.id} className="rounded-xl border border-slate-200 p-4">
                 <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div><p className="font-bold text-slate-900">{item.product_description || item.product_code}</p><p className="text-xs text-slate-500">Código NF: {item.product_code} · Unidade {item.unit}</p><p className="text-xs">{product ? `Produto cadastrado: ${product.name}` : 'Produto ainda não localizado na base pelo código.'}</p></div>
-                  <span className={divergence ? 'rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800' : 'rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700'}>{item.status === 'PENDENTE' ? 'Pendente' : divergence ? 'Divergência' : 'Conferido'}</span>
+                  <div><p className="font-bold text-slate-900">{item.product_description || item.product_code}</p><p className="text-xs text-slate-500">Código: {item.product_code} · Unidade {item.unit}</p><p className="text-xs">{product ? `Produto cadastrado: ${product.name}` : 'Produto ainda não localizado na base pelo código.'}</p></div>
                 </div>
-                <div className="mt-3 grid gap-3 sm:grid-cols-3">
-                  <p className="text-sm"><strong>Qtd. NF:</strong> {item.invoice_quantity}</p>
-                  <label className="text-sm font-semibold">Qtd. conferida
-                    <input type="number" min="0" step="any" value={quantities[item.id] ?? String(item.conferred_quantity ?? item.invoice_quantity)} onChange={(event) => setQuantities((previous) => ({ ...previous, [item.id]: event.target.value }))} disabled={item.status !== 'PENDENTE'} className="mt-1 w-full rounded-lg border border-slate-300 p-2" />
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <label className="text-sm font-semibold">Quantidade contada
+                    <input type="number" min="0" step="any" value={quantities[item.id] ?? (item.conferred_quantity === null ? '' : String(item.conferred_quantity))} onChange={(event) => setQuantities((previous) => ({ ...previous, [item.id]: event.target.value }))} disabled={busy || alreadyConferred} className="mt-1 w-full rounded-lg border border-slate-300 p-2" placeholder="Informe a quantidade contada" />
                   </label>
-                  <div className="flex items-end"><button type="button" disabled={busy || item.status !== 'PENDENTE' || !product} onClick={() => confer(item)} className="w-full rounded-xl bg-indigo-600 px-3 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40">{item.status === 'PENDENTE' ? 'Conferir e lançar estoque' : 'Já conferido'}</button></div>
+                  <label className="text-sm font-semibold">Lote
+                    <input value={lots[item.id] ?? ''} onChange={(event) => setLots((previous) => ({ ...previous, [item.id]: event.target.value }))} disabled={busy || alreadyConferred} className="mt-1 w-full rounded-lg border border-slate-300 p-2" placeholder="Informe o lote deste produto" />
+                  </label>
+                  <label className="text-sm font-semibold">Vencimento
+                    <input type="date" value={expirationDates[item.id] ?? ''} onChange={(event) => setExpirationDates((previous) => ({ ...previous, [item.id]: event.target.value }))} disabled={busy || alreadyConferred || noExpirationDate} className="mt-1 w-full rounded-lg border border-slate-300 p-2" />
+                  </label>
+                  <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={noExpirationDate} onChange={(event) => setNoExpirationDates((previous) => ({ ...previous, [item.id]: event.target.checked }))} disabled={busy || alreadyConferred} /> Produto sem controle de validade</label>
                 </div>
-                {divergence && <p className="mt-2 text-sm font-semibold text-amber-800">Diferença registrada: {(item.conferred_quantity! - item.invoice_quantity).toLocaleString('pt-BR')}</p>}
-                {item.current_stock_quantity !== null && <p className="mt-1 text-xs text-slate-500">Saldo atual do lote: {item.current_stock_quantity}</p>}
+                <div className="mt-3">
+                  <button type="button" disabled={busy || alreadyConferred || !product} onClick={() => confer(item)} className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40">{alreadyConferred ? 'Conferência registrada' : 'Registrar conferência do produto'}</button>
+                </div>
               </article>;
             })}
           </div>
         </>}
       </div>
-      <p className="text-xs text-slate-500">Acesso atual: {currentUserRole}. As operações são enviadas à API autenticada; a conferência idêntica repetida não deve gerar uma nova entrada.</p>
+      <p className="text-xs text-slate-500">Acesso atual: {currentUserRole}. Quantidade da NF-e, divergência e saldo de estoque não são mostrados nesta tela de conferência.</p>
     </section>
   );
 }
