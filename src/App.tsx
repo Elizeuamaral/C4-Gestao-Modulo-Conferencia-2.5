@@ -19,6 +19,7 @@ import {
 import MovementScreen from './components/MovementScreen';
 import InventoryScreen from './components/InventoryScreen';
 import SettingsScreen from './components/SettingsScreen';
+import InvoiceConferenceScreen from './components/InvoiceConferenceScreen';
 import LoginScreen from './components/LoginScreen';
 import { loadStoredSettings } from './utils/settings';
 import { playSuccessBeep, playErrorBuzzer } from './utils/audio';
@@ -98,7 +99,7 @@ const normalizeMovement = (movement: Movement) => ({
 });
 
 export default function App() {
-  const [activeScreen, setActiveScreen] = useState<'MOVIMENTACAO' | 'CONSULTA' | 'CONFIGURACAO'>('MOVIMENTACAO');
+  const [activeScreen, setActiveScreen] = useState<'MOVIMENTACAO' | 'CONSULTA' | 'CONFIGURACAO' | 'NF_E'>('MOVIMENTACAO');
   const [settings, setSettings] = useState<AppSettings>(() => loadStoredSettings());
   const [authToken, setAuthToken] = useState<string | null>(() => getAuthToken());
   const [authUser, setAuthUser] = useState<ApiUser | null>(null);
@@ -871,7 +872,7 @@ export default function App() {
     }
   };
 
-  const handleScreenChange = (screen: 'MOVIMENTACAO' | 'CONSULTA' | 'CONFIGURACAO') => {
+  const handleScreenChange = (screen: 'MOVIMENTACAO' | 'CONSULTA' | 'CONFIGURACAO' | 'NF_E') => {
     if (screen === activeScreen) {
       return;
     }
@@ -987,7 +988,7 @@ export default function App() {
         )}
 
         <div className="max-w-4xl mx-auto px-4 mt-4">
-          <nav className="bg-white p-1.5 rounded-2xl border border-slate-200/80 shadow-sm grid grid-cols-3 gap-1">
+          <nav className={`bg-white p-1.5 rounded-2xl border border-slate-200/80 shadow-sm grid ${authUser.role === 'ADMIN' ? 'grid-cols-4' : 'grid-cols-3'} gap-1`}>
             <button
               onClick={() => handleScreenChange('MOVIMENTACAO')}
               className={`py-3 px-2 rounded-xl font-bold text-xs sm:text-sm tracking-tight transition-all duration-150 flex flex-col sm:flex-row items-center justify-center gap-1.5 cursor-pointer ${
@@ -1015,7 +1016,7 @@ export default function App() {
               <span>Consulta de Estoque</span>
             </button>
 
-            <button
+            {authUser.role === 'ADMIN' && <button
               onClick={() => handleScreenChange('CONFIGURACAO')}
               title={hasActiveConference ? 'Conclua a conferência atual para abrir esta aba.' : undefined}
               className={`py-3 px-2 rounded-xl font-bold text-xs sm:text-sm tracking-tight transition-all duration-150 flex flex-col sm:flex-row items-center justify-center gap-1.5 cursor-pointer ${
@@ -1028,6 +1029,14 @@ export default function App() {
             >
               <Database className="h-4 w-4 shrink-0" />
               <span>Configurações</span>
+            </button>}
+
+            <button
+              onClick={() => handleScreenChange('NF_E')}
+              className={`py-3 px-2 rounded-xl font-bold text-xs sm:text-sm tracking-tight transition-all duration-150 flex flex-col sm:flex-row items-center justify-center gap-1.5 cursor-pointer ${activeScreen === 'NF_E' ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/10' : 'text-slate-600 hover:text-indigo-600 hover:bg-slate-50'}`}
+            >
+              <ClipboardList className="h-4 w-4 shrink-0" />
+              <span>Conferência NF-e</span>
             </button>
           </nav>
         </div>
@@ -1061,7 +1070,9 @@ export default function App() {
             />
           )}
 
-          {activeScreen === 'CONFIGURACAO' && (
+          {activeScreen === 'NF_E' && <InvoiceConferenceScreen currentUserRole={authUser.role} />}
+
+          {activeScreen === 'CONFIGURACAO' && authUser.role === 'ADMIN' && (
             <SettingsScreen
               currentUser={authUser}
               products={products}
