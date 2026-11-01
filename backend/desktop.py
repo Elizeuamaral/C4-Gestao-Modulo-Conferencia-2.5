@@ -14,9 +14,11 @@ import uvicorn
 from backend.app.core.config import settings
 
 
-HOST = "127.0.0.1"
+HOST = settings.api_host
 PORT = settings.api_port
-APP_URL = f"http://{HOST}:{PORT}"
+# 0.0.0.0 is a bind address, not a URL a browser can open.
+BROWSER_HOST = settings.browser_host
+APP_URL = f"http://{BROWSER_HOST}:{PORT}"
 
 
 def _wait_until_ready() -> None:

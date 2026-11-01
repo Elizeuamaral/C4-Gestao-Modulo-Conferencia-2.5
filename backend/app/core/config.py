@@ -18,12 +18,17 @@ class Settings(BaseSettings):
         validation_alias="C4_API_VERSION",
     )
     api_host: str = Field(
-        default="0.0.0.0",
+        # Loopback is the safe default; LAN mode must opt in explicitly.
+        default="127.0.0.1",
         validation_alias="C4_API_HOST",
     )
     api_port: int = Field(
         default=8000,
         validation_alias="C4_API_PORT",
+    )
+    browser_host: str = Field(
+        default="127.0.0.1",
+        validation_alias="C4_BROWSER_HOST",
     )
     cors_origins: str = Field(
         default="http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173",

@@ -118,7 +118,7 @@ if __name__ == "__main__":
 
     uvicorn.run(
         "backend.app.main:app",
-        host="127.0.0.1" if _frontend_dist_directory() else settings.api_host,
+        host=settings.api_host,
         port=settings.api_port,
         reload=False,
     )
