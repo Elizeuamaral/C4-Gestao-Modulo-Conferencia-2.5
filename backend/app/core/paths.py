@@ -1,13 +1,9 @@
-"""Central resolution of local data and backup directories.
-
-Pure functions: nothing is created or opened here. The application keeps using
-``legacy_db_path`` (backend/data/c4gestao.db) until a migration is authorized;
-``default_db_path`` only describes the future location.
-"""
+"""Central resolution of the application's SQLite database and maintenance paths."""
 
 from __future__ import annotations
 
 import os
+import sys
 from collections.abc import Mapping
 from pathlib import Path
 from urllib.parse import unquote
@@ -55,7 +51,7 @@ def backup_dir(env: Mapping[str, str] | None = None) -> Path:
 
 
 def default_db_path(env: Mapping[str, str] | None = None) -> Path:
-    """Future database location (not used by the application yet)."""
+    """Packaged application database path, including C4_DATA_DIR overrides."""
     return data_dir(env) / DB_FILE_NAME
 
 
@@ -64,10 +60,19 @@ def legacy_db_path() -> Path:
 
 
 def current_db_path(env: Mapping[str, str] | None = None) -> Path:
-    """Database file the application uses today, resolved like ``database.py``."""
-    url = _env(env).get("C4_DATABASE_URL")
+    """Resolve the SQLite file used by the application.
+
+    An explicit database URL wins. Otherwise C4_DATA_DIR wins, followed by the
+    packaged per-user path or the legacy source-tree path in development.
+    """
+    values = _env(env)
+    url = values.get("C4_DATABASE_URL", "").strip()
     if not url:
-        return legacy_db_path()
+        if values.get("C4_DATA_DIR", "").strip():
+            return default_db_path(values).resolve()
+        if getattr(sys, "frozen", False):
+            return default_db_path(values).resolve()
+        return legacy_db_path().resolve()
     if not url.startswith("sqlite:///"):
         raise PathConfigError("C4_DATABASE_URL não aponta para um arquivo SQLite local.")
     raw = unquote(url[len("sqlite:///"):].split("?", 1)[0])

@@ -75,8 +75,20 @@ no backend; a interface não é a única barreira.
 
 ## Banco de dados e compatibilidade
 
-O banco configurado por padrão é `backend/data/c4gestao.db`, podendo ser
-substituído por `C4_DATABASE_URL`. A inspeção não mutável do banco local
+Em desenvolvimento, o banco padrão é `backend/data/c4gestao.db`. No executável
+Windows empacotado, o banco fica em
+`%LOCALAPPDATA%\C4Gestao\data\c4gestao.db`. `C4_DATABASE_URL` tem prioridade
+sobre os caminhos padrão; `C4_DATA_DIR` pode substituir o diretório de dados
+quando a URL não estiver configurada. Backups e exportações usam
+`%LOCALAPPDATA%\C4Gestao\backups` no executável empacotado ou o diretório
+definido por `C4_BACKUP_DIR`. Na primeira inicialização empacotada, se o banco
+de destino ainda não existir e não houver override, o banco de desenvolvimento
+é copiado uma única vez para o diretório de dados do usuário; ele não é movido
+nem sobrescrito.
+
+O resolvedor centralizado em `backend/app/core/paths.py` é compartilhado pela
+aplicação e pela CLI de manutenção, para backup, verificação, restauração e
+exportação usarem o mesmo banco efetivo. A inspeção não mutável do banco local
 encontrou as nove tabelas esperadas, incluindo `users` e `auth_sessions`, sem
 tabelas ausentes e com chaves estrangeiras habilitadas. Na inspeção, as tabelas
 de autenticação não continham usuários nem sessões.

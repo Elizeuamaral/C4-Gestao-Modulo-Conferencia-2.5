@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sqlite3
 import subprocess
 import sys
@@ -9,6 +10,7 @@ import unittest
 from contextlib import closing
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest import mock
 
 from backend.app.core import paths
 from backend.app.services.backup import REQUIRED_TABLES
@@ -60,21 +62,89 @@ class PathResolverTests(unittest.TestCase):
             paths.backup_dir({"LOCALAPPDATA": tmp})
             self.assertEqual(list(Path(tmp).iterdir()), [])
 
-    def test_current_db_is_still_the_legacy_path_and_matches_database_module(self) -> None:
-        from backend.app.db.database import DEFAULT_DB_PATH
+    def test_development_uses_legacy_database(self) -> None:
+        with mock.patch.object(paths.sys, "frozen", False, create=True):
+            self.assertEqual(paths.current_db_path({}), paths.legacy_db_path().resolve())
 
-        self.assertEqual(paths.current_db_path({"LOCALAPPDATA": "C:/x"}), DEFAULT_DB_PATH)
-        self.assertEqual(paths.legacy_db_path(), DEFAULT_DB_PATH)
-        self.assertNotEqual(paths.current_db_path({"LOCALAPPDATA": "C:/x"}), paths.default_db_path({"LOCALAPPDATA": "C:/x"}))
+    def test_packaged_database_uses_localappdata(self) -> None:
+        env = {"LOCALAPPDATA": r"C:\Users\x\AppData\Local"}
+        with mock.patch.object(paths.sys, "frozen", True, create=True):
+            self.assertEqual(paths.current_db_path(env), paths.default_db_path(env).resolve())
+            self.assertEqual(
+                paths.current_db_path(env),
+                Path(r"C:\Users\x\AppData\Local\C4Gestao\data\c4gestao.db"),
+            )
 
     def test_database_url_override_is_honored(self) -> None:
         with TemporaryDirectory() as tmp:
             target = Path(tmp) / "t.db"
-            self.assertEqual(paths.current_db_path({"C4_DATABASE_URL": f"sqlite:///{target.as_posix()}"}), target.resolve())
+            env = {
+                "C4_DATABASE_URL": f"sqlite:///{target.as_posix()}",
+                "C4_DATA_DIR": str(Path(tmp) / "ignored-data"),
+            }
+            self.assertEqual(paths.current_db_path(env), target.resolve())
         with self.assertRaises(paths.PathConfigError):
             paths.current_db_path({"C4_DATABASE_URL": "sqlite:///:memory:"})
         with self.assertRaises(paths.PathConfigError):
             paths.current_db_path({"C4_DATABASE_URL": "postgresql://x/y"})
+
+    def test_data_dir_overrides_development_and_packaged_defaults(self) -> None:
+        with TemporaryDirectory() as tmp:
+            env = {"C4_DATA_DIR": str(Path(tmp) / "custom-data")}
+            expected = (Path(tmp) / "custom-data" / "c4gestao.db").resolve()
+            with mock.patch.object(paths.sys, "frozen", False, create=True):
+                self.assertEqual(paths.current_db_path(env), expected)
+            with mock.patch.object(paths.sys, "frozen", True, create=True):
+                self.assertEqual(paths.current_db_path(env), expected)
+
+    def test_database_module_uses_the_central_resolver(self) -> None:
+        code = (
+            "import sys; sys.frozen=True; "
+            "import os; from pathlib import Path; "
+            "from backend.app.core import paths; "
+            "paths.legacy_db_path=lambda: Path(os.environ['C4_TEST_LEGACY']); "
+            "from backend.app.db.database import DEFAULT_DB_PATH, DATABASE_URL; "
+            "print(DEFAULT_DB_PATH); print(DATABASE_URL)"
+        )
+        with TemporaryDirectory() as tmp:
+            legacy = Path(tmp) / "legacy.db"
+            legacy.write_bytes(b"legacy test file")
+            env = os.environ.copy()
+            env.pop("C4_DATABASE_URL", None)
+            env.pop("C4_DATA_DIR", None)
+            env["LOCALAPPDATA"] = tmp
+            env["C4_TEST_LEGACY"] = str(legacy)
+            result = subprocess.run(
+                [sys.executable, "-B", "-c", code],
+                cwd=REPO_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            expected = Path(tmp) / "C4Gestao" / "data" / "c4gestao.db"
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(Path(result.stdout.splitlines()[0]), expected)
+            self.assertIn(expected.as_posix(), result.stdout.splitlines()[1])
+            self.assertEqual(expected.read_bytes(), legacy.read_bytes())
+
+            explicit = Path(tmp) / "explicit.db"
+            env["C4_DATABASE_URL"] = f"sqlite:///{explicit.as_posix()}"
+            env["C4_DATA_DIR"] = str(Path(tmp) / "ignored")
+            packaged_default = expected
+            packaged_default.unlink()
+            result = subprocess.run(
+                [sys.executable, "-B", "-c", code],
+                cwd=REPO_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(Path(result.stdout.splitlines()[0]), explicit)
+            self.assertIn(explicit.as_posix(), result.stdout.splitlines()[1])
+            self.assertFalse(packaged_default.exists())
 
 
 class CliTests(unittest.TestCase):
@@ -108,6 +178,52 @@ class CliTests(unittest.TestCase):
         self.assertIn(str(self.db), self.text())
         self.assertIn(str(self.backups), self.text())
         self.assertEqual(sha256(self.db), before)
+
+    def test_packaged_default_paths_are_shared_by_backup_verify_export_and_restore(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            db = root / "C4Gestao" / "data" / "c4gestao.db"
+            backups = root / "C4Gestao" / "backups"
+            make_db(db, "antes")
+            env = {"LOCALAPPDATA": tmp}
+            lines: list[str] = []
+            with mock.patch.object(paths.sys, "frozen", True, create=True):
+                run = lambda *argv: cli.main(
+                    list(argv), env=env, out=lines.append, api_probe=lambda _port: False
+                )
+                self.assertEqual(run("backup"), 0, "\n".join(lines))
+                backup = next(backups.glob("c4gestao-*.db"))
+                self.assertEqual(run("verify"), 0, "\n".join(lines))
+                self.assertEqual(run("export"), 0, "\n".join(lines))
+                self.assertTrue((backups / "exports").is_dir())
+
+                with closing(sqlite3.connect(db)) as conn:
+                    conn.execute("UPDATE products SET v='alterado'")
+                    conn.commit()
+                self.assertEqual(
+                    run("restore", "--backup-file", str(backup), "--confirm", "RESTAURAR"),
+                    0,
+                    "\n".join(lines),
+                )
+                self.assertEqual(marker(db), "antes")
+                self.assertEqual(len(list((backups / "pre-restore").iterdir())), 1)
+
+    def test_custom_data_and_backup_directories_are_used_by_cli(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            data_dir = root / "custom-data"
+            backup_dir = root / "custom-backups"
+            db = data_dir / "c4gestao.db"
+            make_db(db, "custom")
+            env = {"C4_DATA_DIR": str(data_dir), "C4_BACKUP_DIR": str(backup_dir)}
+            lines: list[str] = []
+            run = lambda *argv: cli.main(
+                list(argv), env=env, out=lines.append, api_probe=lambda _port: False
+            )
+            self.assertEqual(run("backup"), 0, "\n".join(lines))
+            self.assertTrue(list(backup_dir.glob("c4gestao-*.db")))
+            self.assertIn(str(db.resolve()), "\n".join(lines))
+            self.assertEqual(run("verify"), 0, "\n".join(lines))
 
     def test_verify_good_and_bad_files(self) -> None:
         self.assertEqual(self.run_cli("verify"), 0)
