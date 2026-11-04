@@ -129,7 +129,7 @@ Para gerar o pacote de teste:
 python scripts/build_windows.py
 ```
 
-O resultado é `dist\\C4Gestao\\C4Gestao.exe`. O script executa lint, build do frontend e empacotamento com PyInstaller. Ele ainda não é um instalador Setup nem um serviço Windows.
+O resultado é `build\desktop\C4Gestao\C4Gestao.exe`. O script executa lint, build do frontend e empacotamento com PyInstaller. Ele ainda não é um instalador Setup nem um serviço Windows.
 
 No pacote, o frontend compilado é servido pelo próprio FastAPI. Para uso como servidor, configure `C4_API_HOST=0.0.0.0` no ambiente do processo e mantenha `C4_BROWSER_HOST=127.0.0.1`. Os clientes acessam `http://IP_DO_SERVIDOR:8000`.
 

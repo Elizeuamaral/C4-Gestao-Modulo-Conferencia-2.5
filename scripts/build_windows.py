@@ -31,13 +31,13 @@ def main() -> None:
     run([sys.executable, "-m", "pip", "install", "-r", "requirements-desktop.txt"])
     run([
         sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean",
-        "--name", "C4Gestao", "--windowed", "--onedir", "--paths", ".",
+        "--name", "C4Gestao", "--distpath", "build/desktop", "--windowed", "--onedir", "--paths", ".",
         "--add-data", "dist;frontend/dist", "--collect-all", "uvicorn",
         "--collect-all", "sqlalchemy", "--collect-all", "pydantic_settings",
         "--collect-submodules", "backend",
         "backend/desktop.py",
     ])
-    print("\nPacote de teste gerado em dist/C4Gestao/C4Gestao.exe")
+    print("\nPacote de teste gerado em build/desktop/C4Gestao/C4Gestao.exe")
 
 
 if __name__ == "__main__":

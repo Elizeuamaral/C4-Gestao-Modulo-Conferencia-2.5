@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import socket
+import sys
 import threading
 import time
 import urllib.error
@@ -48,8 +50,16 @@ def _ensure_port_available() -> None:
             ) from exc
 
 
+def _ensure_std_streams() -> None:
+    """Windowed PyInstaller builds have no console; uvicorn logging needs real streams."""
+    for name in ("stdout", "stderr"):
+        if getattr(sys, name) is None:
+            setattr(sys, name, open(os.devnull, "w", encoding="utf-8"))
+
+
 def main() -> None:
     """Run the local API and bundled frontend in one application process."""
+    _ensure_std_streams()
     _ensure_port_available()
     threading.Thread(target=_wait_until_ready, daemon=True).start()
     uvicorn.run(
